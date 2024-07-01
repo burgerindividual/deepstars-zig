@@ -381,7 +381,7 @@ pub fn main() !void {
     );
 
     // the default parameters rely on mipmaps, which we don't want
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 
     gl.FramebufferTexture2D(
@@ -395,46 +395,6 @@ pub fn main() !void {
     // Clear stars framebuffer
     gl.ClearColor(0.0, 0.0, 0.0, 0.0);
     gl.Clear(gl.COLOR_BUFFER_BIT);
-
-    //// TEST
-
-    var terrain_framebuffer: gl.uint = undefined;
-    gl.GenFramebuffers(1, @as(*[1]gl.uint, &terrain_framebuffer));
-    defer gl.DeleteFramebuffers(1, @as(*[1]gl.uint, &terrain_framebuffer));
-
-    var terrain_fb_texture: gl.uint = undefined;
-    gl.GenTextures(1, @as(*[1]gl.uint, &terrain_fb_texture));
-    defer gl.DeleteTextures(1, @as(*[1]gl.uint, &terrain_fb_texture));
-
-    gl.BindFramebuffer(gl.FRAMEBUFFER, terrain_framebuffer);
-    setupTextureTarget(
-        3840,
-        2400,
-        terrain_fb_texture,
-    );
-
-    // the default parameters rely on mipmaps, which we don't want
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-
-    gl.FramebufferTexture2D(
-        gl.FRAMEBUFFER,
-        gl.COLOR_ATTACHMENT0,
-        gl.TEXTURE_2D,
-        terrain_fb_texture,
-        0,
-    );
-
-    gl.Clear(gl.COLOR_BUFFER_BIT);
-
-    // gl.DepthMask(gl.TRUE);
-    gl.BlendEquation(gl.FUNC_ADD);
-    gl.UseProgram(terrain_program);
-    gl.BindVertexArrayOES(terrain_vao);
-    gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
-
-    //// END TEST
-
     // Set clear color back for default framebuffer
     gl.ClearColor(0.0, 0.0, 0.0, 1.0);
 
@@ -493,25 +453,19 @@ pub fn main() !void {
         //   making sure to mask color and depth appropriately. this should give an
         //   anti-aliased terrain that still does early-depth optimizations on stars
 
-        // gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
-        // gl.DepthMask(gl.TRUE);
-        // gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        // gl.BlendEquation(gl.FUNC_ADD);
-        // gl.UseProgram(terrain_program);
-        // gl.BindVertexArrayOES(terrain_vao);
-        // gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
+        gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+        gl.DepthMask(gl.TRUE);
+        gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.BlendEquation(gl.FUNC_ADD);
+        gl.UseProgram(terrain_program);
+        gl.BindVertexArrayOES(terrain_vao);
+        gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
 
         // Render stars framebuffer as fullscreen tri
         // TODO: bind texture later if necessary
-        gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
-
         gl.DepthMask(gl.FALSE);
         gl.UseProgram(framebuffer_program);
         gl.BindVertexArrayOES(framebuffer_vao);
-        
-        gl.BindTexture(gl.TEXTURE_2D, terrain_fb_texture);
-        gl.DrawArrays(gl.TRIANGLES, 0, framebuffer_vertices.len);
-        gl.BindTexture(gl.TEXTURE_2D, stars_fb_texture);
         gl.DrawArrays(gl.TRIANGLES, 0, framebuffer_vertices.len);
 
         window.swapBuffers();
