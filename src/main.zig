@@ -140,7 +140,7 @@ pub fn main() !void {
     var stars = Stars{ .vertices = .{.{
         .r = 1.0,
         .g = 1.0,
-        .b = 1.0,
+        .b = 0.8,
         .a = 1.0,
 
         .x = 0.0,
@@ -363,6 +363,9 @@ pub fn main() !void {
     );
     gl.EnableVertexAttribArray(framebuffer_pos_attrib);
 
+    // Set up opacity uniform
+    const opacity_uniform = gl.GetUniformLocation(framebuffer_program, "opacity");
+
     // Create stars framebuffer and texture
     var stars_framebuffer: gl.uint = undefined;
     gl.GenFramebuffers(1, @as(*[1]gl.uint, &stars_framebuffer));
@@ -448,10 +451,10 @@ pub fn main() !void {
 
         // Render terrain
 
-        // TODO: render terrain to max-width, scaled constrained height texture.
-        //   render framebuffer once with alpha depth pass, then with color pass,
-        //   making sure to mask color and depth appropriately. this should give an
-        //   anti-aliased terrain that still does early-depth optimizations on stars
+        // TODO: render terrain with STREAM_DRAW to max-width, scaled constrained height texture.
+        //   render that texture through an SSAA shader to downscale to another texture.
+        //   finally, use that texture to render a quad with the depth calculations to allow
+        //   for depth test.
 
         gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
         gl.DepthMask(gl.TRUE);
@@ -466,6 +469,9 @@ pub fn main() !void {
         gl.DepthMask(gl.FALSE);
         gl.UseProgram(framebuffer_program);
         gl.BindVertexArrayOES(framebuffer_vao);
+
+        gl.Uniform1f(opacity_uniform, @as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 3000)) / 3000.0);
+
         gl.DrawArrays(gl.TRIANGLES, 0, framebuffer_vertices.len);
 
         window.swapBuffers();
