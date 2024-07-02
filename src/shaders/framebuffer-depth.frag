@@ -10,7 +10,7 @@ varying vec2 tex_coords;
 void main() {
     vec4 sample = texture2D(framebuffer, tex_coords);
     if (sample.a != 1.0) {
-        gl_FragDepth = 1.0;
+        gl_FragDepthEXT = 1.0;
     }
     gl_FragColor = sample;
 }
