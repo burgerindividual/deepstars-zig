@@ -24,7 +24,10 @@
     // internet connectivity.
     .dependencies = .{
         .@"mach-glfw" = .{
-            .path = "mach-glfw",
+            .path = "libs/mach-glfw",
+        },
+        .zmath = .{
+            .path = "libs/zmath",
         },
         .zigglgen = .{
             .url = "https://github.com/castholm/zigglgen/releases/download/v0.2.3/zigglgen.tar.gz",

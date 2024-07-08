@@ -2,6 +2,9 @@
 
 precision mediump float;
 
+uniform mat4 mvp_matrix;
+uniform float global_scale;
+
 attribute vec4 a_color;
 attribute vec3 position;
 attribute float a_size;
@@ -11,8 +14,7 @@ varying float v_size;
 
 void main() {
     v_color = a_color;
-    v_size = a_size;
-    gl_PointSize = a_size;
-    // do mat mul
-    gl_Position = vec4(position, 1.0);
+    v_size = a_size * global_scale;
+    gl_PointSize = v_size;
+    gl_Position = mvp_matrix * vec4(position, 1.0);
 }

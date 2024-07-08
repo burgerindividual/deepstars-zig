@@ -9,5 +9,8 @@ varying vec2 tex_coords;
 
 void main() {
     vec4 sample = texture2D(framebuffer, tex_coords);
-    gl_FragColor = vec4(sample.rgb, sample.a * opacity);
+    float alpha = sample.a * opacity;
+    // the premultiplication expects a black clear color
+    vec3 color_premultiplied = sample.rgb * alpha;
+    gl_FragColor = vec4(color_premultiplied, 1.0);
 }

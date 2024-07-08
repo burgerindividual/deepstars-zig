@@ -26,6 +26,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     }).module("mach-glfw"));
 
+    exe.root_module.addImport("zmath", b.dependency("zmath", .{
+        .target = target,
+        .optimize = optimize,
+    }).module("root"));
+
     const gl_bindings = @import("zigglgen").generateBindingsModule(b, .{
         .api = .gles,
         .version = .@"2.0",

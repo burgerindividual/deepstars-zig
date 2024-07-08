@@ -1,10 +1,7 @@
 const std = @import("std");
 const glfw = @import("mach-glfw");
 const gl = @import("gl");
-// const mach = @import("mach");
-// const core = mach.core;
-// const gpu = mach.gpu;
-// const gpu = @import("mach-gpu");
+const zm = @import("zmath");
 
 var gl_procs: gl.ProcTable = undefined;
 
@@ -52,10 +49,12 @@ pub fn main() !void {
             .context_debug = std.debug.runtime_safety,
             .client_api = .opengl_es_api,
             .decorated = false,
+            .transparent_framebuffer = false,
+            // .srgb_capable = true,
             // what happens if the platform doesn't support KHR_no_error?
             // .context_no_error = !std.debug.runtime_safety,
             // .context_creation_api = .egl_context_api,
-            // .samples = 0,
+            // .samples = 8,
         },
     ) orelse {
         glfw_log.err("failed to create GLFW window: {?s}", .{glfw.getErrorString()});
@@ -72,7 +71,7 @@ pub fn main() !void {
     window.setKeyCallback(onKeyEvent);
 
     // Enable VSync to avoid drawing more often than necessary.
-    glfw.swapInterval(0);
+    glfw.swapInterval(1);
 
     // Initialize the OpenGL procedure table.
     if (!gl_procs.init(glfw.getProcAddress)) {
@@ -106,8 +105,47 @@ pub fn main() !void {
 
     const alloc = gpa.allocator();
 
-    // Enable blending
-    gl.Enable(gl.BLEND);
+    ////
+    //// Set up matrices and star geometry
+    ////
+    const up_dir_quaternion = zm.quatFromNormAxisAngle(
+        zm.f32x4(1.0, 0.0, 0.0, 1.0),
+        std.math.tau * rand.float(f32),
+    );
+    const look_dir_quaternion = zm.quatFromNormAxisAngle(
+        zm.f32x4(0.0, 0.0, 1.0, 1.0),
+        std.math.tau * rand.float(f32),
+    );
+    const up_direction = zm.rotate(
+        up_dir_quaternion,
+        zm.f32x4(0.0, 0.0, 1.0, 1.0),
+    );
+    const look_direction = zm.rotate(
+        zm.qmul(
+            look_dir_quaternion,
+            up_dir_quaternion,
+        ),
+        zm.f32x4(1.0, 0.0, 0.0, 1.0),
+    );
+    // +Z represents the north pole, but we randomize the up direction
+    // +X represents going into the screen
+    const view_matrix = zm.lookToRh(
+        zm.f32x4(0.0, 0.0, 0.0, 0.0),
+        look_direction,
+        up_direction,
+    );
+
+    const aspect_ratio = @as(f32, @floatFromInt(preferred_width)) / @as(f32, @floatFromInt(preferred_height));
+    const fov_x = 50.0 * @as(f32, @floatFromInt(preferred_height)) / @as(f32, @floatFromInt(preferred_width));
+    // don't use GL version, we want the depth values between 0 and 1
+    const projection_matrix = zm.perspectiveFovRh(
+        fov_x * std.math.pi / 180.0,
+        aspect_ratio,
+        0.1,
+        10.0,
+    );
+
+    // Set blending mode
     gl.BlendFuncSeparate(
         gl.SRC_ALPHA,
         gl.ONE_MINUS_SRC_ALPHA,
@@ -137,25 +175,12 @@ pub fn main() !void {
     gl.GenBuffers(1, @as(*[1]gl.uint, &stars_vertex_buffer));
     defer gl.DeleteBuffers(1, @as(*[1]gl.uint, &stars_vertex_buffer));
 
-    var stars = Stars{ .vertices = .{.{
-        .r = 1.0,
-        .g = 1.0,
-        .b = 0.8,
-        .a = 1.0,
-
-        .x = 0.0,
-        .y = 0.0,
-        .z = 0.5,
-
-        .size = @as(f32, @floatFromInt(window.getFramebufferSize().height)) / 150.0,
-    }} };
-
     gl.BindBuffer(gl.ARRAY_BUFFER, stars_vertex_buffer);
     gl.BufferData(
         gl.ARRAY_BUFFER,
-        @sizeOf(@TypeOf(stars)),
-        &stars,
-        gl.DYNAMIC_DRAW,
+        @sizeOf(@TypeOf(stars.vertices)),
+        &stars.vertices,
+        gl.STATIC_DRAW,
     );
 
     // Set up shaders
@@ -224,6 +249,9 @@ pub fn main() !void {
         28,
     );
     gl.EnableVertexAttribArray(stars_size_attrib);
+
+    const global_scale_uniform = gl.GetUniformLocation(stars_program, "global_scale");
+    const mvp_matrix_uniform = gl.GetUniformLocation(stars_program, "mvp_matrix");
 
     ////
     //// TERRAIN SETUP
@@ -395,19 +423,25 @@ pub fn main() !void {
         0,
     );
 
-    // Clear stars framebuffer
-    gl.ClearColor(0.0, 0.0, 0.0, 0.0);
-    gl.Clear(gl.COLOR_BUFFER_BIT);
-    // Set clear color back for default framebuffer
-    gl.ClearColor(0.0, 0.0, 0.0, 1.0);
+    // bind default framebuffer
+    gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+
+    var global_star_scale = @as(f32, @floatFromInt(window.getFramebufferSize().height)) / 100.0;
+    var stars_fb_needs_clear = true;
+    // smear start time, smear end time
 
     main_loop: while (true) {
         glfw.pollEvents();
 
         if (window.shouldClose()) break :main_loop;
 
-        gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
-        gl.DepthMask(gl.FALSE);
+        const ms_time: u64 = @intCast(std.time.milliTimestamp());
+
+        // const stars_smear_opacity: f32 = @as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 3000)) / 3000.0;
+        const stars_smear_opacity = 0.0;
+
+        // stars.vertices[0].x = (@as(f32, @floatFromInt(@as(u14, @truncate(ms_time)))) / 8192.0) - 1.0;
+        // stars.vertices[0].y = @sin(@as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 10000)) / comptime (10000.0 / std.math.tau));
 
         if (resize_event) |e| {
             const width: gl.sizei = @intCast(e.width);
@@ -419,66 +453,96 @@ pub fn main() !void {
                 height,
                 stars_fb_texture,
             );
-            gl.ClearColor(0.0, 0.0, 0.0, 0.0);
-            gl.Clear(gl.COLOR_BUFFER_BIT);
-            // Set clear color back for default framebuffer
-            gl.ClearColor(0.0, 0.0, 0.0, 1.0);
+            stars_fb_needs_clear = true;
 
-            stars.vertices[0].size = @as(f32, @floatFromInt(window.getFramebufferSize().height)) / 150.0;
+            global_star_scale = @as(f32, @floatFromInt(e.height)) / 100.0;
 
             resize_event = null;
         }
 
-        const ms_time: u64 = @intCast(std.time.milliTimestamp());
-
-        // Render stars on framebuffer
-        gl.BlendEquation(gl.MAX_EXT);
-        gl.UseProgram(stars_program);
-        gl.BindVertexArrayOES(stars_vao);
-
-        // This buffer has to be rebound solely to call BufferSubData on it
-        gl.BindBuffer(gl.ARRAY_BUFFER, stars_vertex_buffer);
-        stars.vertices[0].x = (@as(f32, @floatFromInt(@as(u14, @truncate(ms_time)))) / 8192.0) - 1.0;
-        stars.vertices[0].y = @sin(@as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 10000)) / comptime (10000.0 / std.math.tau));
-        gl.BufferSubData(
-            gl.ARRAY_BUFFER,
-            0,
-            @sizeOf(@TypeOf(stars)),
-            &stars,
-        );
-
-        gl.DrawArrays(gl.POINTS, 0, star_count);
-
         // Render terrain
+        gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+        gl.DepthMask(gl.TRUE);
+        gl.Disable(gl.BLEND);
+        gl.ClearColor(0.0, 0.0, 0.0, 1.0);
+        gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
         // TODO: render terrain with STREAM_DRAW to max-width, scaled constrained height texture.
         //   render that texture through an SSAA shader to downscale to another texture.
         //   finally, use that texture to render a quad with the depth calculations to allow
         //   for depth test.
-
-        gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
-        gl.DepthMask(gl.TRUE);
-        gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        gl.BlendEquation(gl.FUNC_ADD);
+        // https://github.com/TheRensei/OpenGL-MSAA-SSAA/blob/master/Coursework/OpenGL/Resources/Shaders/SSAA.fs
         gl.UseProgram(terrain_program);
         gl.BindVertexArrayOES(terrain_vao);
         gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
 
-        // Render stars framebuffer as fullscreen tri
-        // TODO: bind texture later if necessary
+        // Render stars and smears
+        if (stars_fb_needs_clear) {
+            gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
+            gl.ClearColor(0.0, 0.0, 0.0, 0.0);
+            gl.Clear(gl.COLOR_BUFFER_BIT);
+
+            stars_fb_needs_clear = false;
+        } else if (stars_smear_opacity > 0.0) {
+            // don't rebind if already bound
+            gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
+        }
+
         gl.DepthMask(gl.FALSE);
-        gl.UseProgram(framebuffer_program);
-        gl.BindVertexArrayOES(framebuffer_vao);
+        gl.Enable(gl.BLEND);
+        gl.UseProgram(stars_program);
+        gl.BindVertexArrayOES(stars_vao);
 
-        gl.Uniform1f(opacity_uniform, @as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 3000)) / 3000.0);
+        const angle = @as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 600000)) * comptime (std.math.tau / 600000.0);
+        const earth_rot_quaternion = zm.quatFromRollPitchYawV(zm.f32x4(
+            0.0,
+            0.0,
+            angle,
+            0.0,
+        ));
 
-        gl.DrawArrays(gl.TRIANGLES, 0, framebuffer_vertices.len);
+        const model_matrix = zm.matFromQuat(earth_rot_quaternion);
+        const mvp_matrix = zm.mul(zm.mul(model_matrix, view_matrix), projection_matrix);
+        gl.UniformMatrix4fv(
+            mvp_matrix_uniform,
+            1,
+            gl.FALSE,
+            zm.arrNPtr(&mvp_matrix),
+        );
+        gl.Uniform1f(global_scale_uniform, global_star_scale);
+
+        if (stars_smear_opacity > 0.0) {
+            // Render smears to framebuffer
+            gl.BlendEquation(gl.MAX_EXT);
+            gl.DrawArrays(gl.POINTS, 0, star_count);
+        }
+
+        gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+        gl.BlendEquation(gl.FUNC_ADD);
+
+        // when the smears are translucent or gone, render stars to default framebuffer
+        if (stars_smear_opacity < 1.0) {
+            gl.DrawArrays(gl.POINTS, 0, star_count);
+        }
+
+        if (stars_smear_opacity > 0.0) {
+            // Render smears framebuffer as fullscreen tri
+            gl.BlendEquation(gl.MAX_EXT);
+            gl.UseProgram(framebuffer_program);
+            gl.BindVertexArrayOES(framebuffer_vao);
+            gl.BindTexture(gl.TEXTURE_2D, stars_fb_texture);
+
+            gl.Uniform1f(opacity_uniform, stars_smear_opacity);
+
+            gl.DrawArrays(gl.TRIANGLES, 0, framebuffer_vertices.len);
+        }
 
         window.swapBuffers();
     }
 }
 
-const star_count: u16 = 1;
+const stars = genStars();
+const star_count: u16 = 9110 - 14;
 
 const stars_color_attrib = 0;
 const stars_pos_attrib = 1;
@@ -501,6 +565,77 @@ const Stars = struct {
     vertices: [star_count]StarVertex,
 };
 
+fn genStars() Stars {
+    const stars_uninit: Stars = undefined;
+
+    const bcs5_data = @embedFile("assets/BSC5");
+    // 28 byte offset for header
+    var pointer: []const u8 = bcs5_data[28..];
+
+    var idx: u16 = 0;
+    while (pointer.len > 0) {
+        const right_ascension: f64 = @bitCast(pointer[4..12].*);
+        const declination: f64 = @bitCast(pointer[12..20].*);
+        const mk_class: [2]u8 = pointer[20..22].*;
+        const v_magnitude: f32 = @as(f32, @floatFromInt(@as(i16, @bitCast(pointer[22..24].*)))) / 100.0;
+
+        // 32 bytes per entry
+        pointer = pointer[32..];
+
+        if (std.mem.eql(u8, &spectral_type, "  ")) {
+            // invalid entry
+            continue;
+        }
+
+        idx += 1;
+
+        stars_uninit.vertices[idx] = StarVertex{
+            .r = rand.float(f32),
+            .g = rand.float(f32),
+            .b = rand.float(f32),
+            .a = rand.float(f32),
+
+            .x = rand.float(f32) - 0.5,
+            .y = rand.float(f32) - 0.5,
+            .z = rand.float(f32) - 0.5,
+
+            .size = rand.float(f32),
+        };
+    }
+
+    return stars_uninit;
+}
+
+fn rgbColorFromMk(mk_class: [2]u8) @Vector(3, u8) {
+    const letter = mk_class[0];
+    // ascii code for '0'
+    const number = mk_class[1] - 48;
+
+    const blend_colors = [_]@Vector(3, u8){
+        .{155, 176, 255},
+        .{170, 191, 255},
+        .{202, 215, 255},
+        .{248, 247, 255},
+        .{255, 244, 234},
+        .{255, 210, 161},
+        .{255, 204, 111},
+    };
+
+    const low_blend_idx: usize = switch (letter) {
+        'O' => 6,
+        'B' => 5,
+        'A' => 4,
+        'F' => 3,
+        'G' => 2,
+        'K' => 1,
+        'M' => 0,
+        else => unreachable,
+    };
+    
+    const low_blend = blend_colors[low_blend_idx];
+    const high_blend = blend_colors[low_blend_idx + 1];
+}
+
 const terrain_divisions: u16 = 100;
 const terrain_vertices: u16 = 2 + (terrain_divisions * 2);
 const terrain_indices: u32 = terrain_divisions * 6;
@@ -518,7 +653,8 @@ const Terrain = struct {
 };
 
 fn genTerrain(alloc: std.mem.Allocator, rand: std.Random) !*Terrain {
-    // todo: https://arpit.substack.com/p/1d-procedural-terrain-generation
+    // TODO: https://arpit.substack.com/p/1d-procedural-terrain-generation
+    // TODO: software render with supersampling or msaa
 
     var terrain = try alloc.create(Terrain);
 
