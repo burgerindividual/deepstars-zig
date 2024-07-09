@@ -108,6 +108,8 @@ pub fn main() !void {
     ////
     //// Set up matrices and star geometry
     ////
+    const stars = try genStars(alloc);
+
     const up_dir_quaternion = zm.quatFromNormAxisAngle(
         zm.f32x4(1.0, 0.0, 0.0, 1.0),
         std.math.tau * rand.float(f32),
@@ -541,7 +543,6 @@ pub fn main() !void {
     }
 }
 
-const stars = genStars();
 const star_count: u16 = 9110 - 14;
 
 const stars_color_attrib = 0;
@@ -565,75 +566,165 @@ const Stars = struct {
     vertices: [star_count]StarVertex,
 };
 
-fn genStars() Stars {
-    const stars_uninit: Stars = undefined;
+fn genStars(alloc: std.mem.Allocator) !*Stars {
+    const stars = try alloc.create(Stars);
 
-    const bcs5_data = @embedFile("assets/BSC5");
-    // 28 byte offset for header
-    var pointer: []const u8 = bcs5_data[28..];
+    const bcs5_data = @embedFile("assets/bsc5.dat");
 
-    var idx: u16 = 0;
-    while (pointer.len > 0) {
-        const right_ascension: f64 = @bitCast(pointer[4..12].*);
-        const declination: f64 = @bitCast(pointer[12..20].*);
-        const mk_class: [2]u8 = pointer[20..22].*;
-        const v_magnitude: f32 = @as(f32, @floatFromInt(@as(i16, @bitCast(pointer[22..24].*)))) / 100.0;
-
-        // 32 bytes per entry
-        pointer = pointer[32..];
-
-        if (std.mem.eql(u8, &spectral_type, "  ")) {
-            // invalid entry
+    var iter = std.mem.splitScalar(u8, bcs5_data[0..], '\n');
+    while (iter.next()) |line| {
+        if (line.len < 113) {
             continue;
         }
 
-        idx += 1;
+        const right_ascension_hr: f64 = @floatFromInt(std.fmt.parseInt(u8, line[75..77], 10) catch continue);
+        const right_ascension_min: f64 = @floatFromInt(std.fmt.parseInt(u8, line[77..79], 10) catch continue);
+        const right_ascension_sec: f64 = std.fmt.parseFloat(f64, line[79..83]) catch continue;
+        const declination_sign: f64 = if (line[83] == '-') -1.0 else 1.0;
+        const declination_deg: f64 = @floatFromInt(std.fmt.parseInt(u8, line[84..86], 10) catch continue);
+        const declination_min: f64 = @floatFromInt(std.fmt.parseInt(u8, line[86..88], 10) catch continue);
+        const declination_sec: f64 = @floatFromInt(std.fmt.parseInt(u8, line[88..90], 10) catch continue);
+        const v_mag_sign: f32 = if (line[102] == '-') -1.0 else 1.0;
+        const v_mag_num = std.fmt.parseFloat(f32, line[103..107]) catch continue;
+        const bv = std.fmt.parseFloat(f32, line[109..114]) catch continue;
 
-        stars_uninit.vertices[idx] = StarVertex{
-            .r = rand.float(f32),
-            .g = rand.float(f32),
-            .b = rand.float(f32),
-            .a = rand.float(f32),
+        const right_ascension_rad: f64 = (right_ascension_hr + right_ascension_min / 60.0 + right_ascension_sec / 3600.0) * (std.math.pi / 24.0);
+        const declination_rad: f64 = declination_sign * (declination_deg + declination_min / 60.0 + declination_sec / 3600.0) * (std.math.pi / 180.0);
+        const color = rgbFromBv(bv);
+        const v_magnitude = v_mag_sign * v_mag_num;
+        // vmag high -1.46, low 8.00ish
 
-            .x = rand.float(f32) - 0.5,
-            .y = rand.float(f32) - 0.5,
-            .z = rand.float(f32) - 0.5,
+        _ = v_magnitude;
+        _ = right_ascension_rad;
+        _ = declination_rad;
+        _ = color;
 
-            .size = rand.float(f32),
-        };
+        // reexport these to save on binary size
+
+        // stars_uninit.vertices[idx] = StarVertex{
+        //     .r = rand.float(f32),
+        //     .g = rand.float(f32),
+        //     .b = rand.float(f32),
+        //     .a = rand.float(f32),
+
+        //     .x = rand.float(f32) - 0.5,
+        //     .y = rand.float(f32) - 0.5,
+        //     .z = rand.float(f32) - 0.5,
+
+        //     .size = rand.float(f32),
+        // };
     }
 
-    return stars_uninit;
+    return stars;
 }
 
-fn rgbColorFromMk(mk_class: [2]u8) @Vector(3, u8) {
-    const letter = mk_class[0];
-    // ascii code for '0'
-    const number = mk_class[1] - 48;
+const f64x4 = @Vector(4, f64);
+const f64x3 = @Vector(3, f64);
+const f32x3 = @Vector(3, f32);
 
-    const blend_colors = [_]@Vector(3, u8){
-        .{155, 176, 255},
-        .{170, 191, 255},
-        .{202, 215, 255},
-        .{248, 247, 255},
-        .{255, 244, 234},
-        .{255, 210, 161},
-        .{255, 204, 111},
+// D65 white point approximation from the following table:
+// http://www.vendian.org/mncharity/dir3/blackbody/UnstableURLs/bbr_color.html
+fn rgbFromBv(bv: f64) f32x3 {
+    @setFloatMode(.optimized);
+    const bv_splat: f64x4 = @splat(bv);
+
+    // R, G1, B, G2
+    const coeff_vectors = [_]f64x4{
+        .{ 1.0244838411856621e-2, -1.2981528394826059e-3, -1.4462486359369586e-2, 9.7277840557748207e-4 },
+        .{ 9.4009027654247290e-2, 2.4919995578097424e-2, 1.3036467204988925e-1, 3.4402198113594427e-2 },
+        .{ 3.9806863413614252e-1, -2.1607300214538638e-1, -5.9516947822267696e-1, 2.4389228181984887e-1 },
+        .{ 7.9561522955560138e-1, 1.0713298831304217e+0, 1.2478054530763567e+0, 8.5766884841475788e-1 },
     };
 
-    const low_blend_idx: usize = switch (letter) {
-        'O' => 6,
-        'B' => 5,
-        'A' => 4,
-        'F' => 3,
-        'G' => 2,
-        'K' => 1,
-        'M' => 0,
-        else => unreachable,
-    };
-    
-    const low_blend = blend_colors[low_blend_idx];
-    const high_blend = blend_colors[low_blend_idx + 1];
+    var poly_eval = coeff_vectors[0];
+    inline for (1..coeff_vectors.len) |idx| {
+        poly_eval = poly_eval * bv_splat + coeff_vectors[idx];
+    }
+
+    const bottom_clamp: f64x3 = @splat(0.0);
+    // use G2 as a top clamp for G1, otherwise clamp to 1.0
+    const top_clamp: f64x3 = @shuffle(
+        f64,
+        @Vector(1, f64){1.0},
+        poly_eval,
+        @Vector(3, i32){ 0, ~@as(i32, 3), 0 },
+    );
+    const trimmed_poly_eval = @shuffle(
+        f64,
+        poly_eval,
+        undefined,
+        @Vector(3, i32){ 0, 1, 2 },
+    );
+    const clamped_result = @min(@max(trimmed_poly_eval, bottom_clamp), top_clamp);
+
+    return @floatCast(clamped_result);
+}
+
+// fn rgbColorFromMkClass(mk_class: [2]u8) @Vector(3, u8) {
+//     return switch (@as(u16, @bitCast(mk_class))) {
+//         mkClassCase("O4"), mkClassCase("O5") => .{ 155, 176, 255 },
+//         mkClassCase("O6") => .{ 162, 184, 255 },
+//         mkClassCase("O7") => .{ 157, 177, 255 },
+//         mkClassCase("O8") => .{ 157, 177, 255 },
+//         mkClassCase("O9") => .{ 154, 178, 255 },
+//         mkClassCase("B0") => .{ 156, 178, 255 },
+//         mkClassCase("B1") => .{ 160, 182, 255 },
+//         mkClassCase("B2") => .{ 160, 180, 255 },
+//         mkClassCase("B3") => .{ 165, 185, 255 },
+//         mkClassCase("B4") => .{ 164, 184, 255 },
+//         mkClassCase("B5") => .{ 170, 191, 255 },
+//         mkClassCase("B6") => .{ 172, 189, 255 },
+//         mkClassCase("B7") => .{ 173, 191, 255 },
+//         mkClassCase("B8") => .{ 177, 195, 255 },
+//         mkClassCase("B9") => .{ 181, 198, 255 },
+//         mkClassCase("A0") => .{ 185, 201, 255 },
+//         mkClassCase("A1") => .{ 181, 199, 255 },
+//         mkClassCase("A2") => .{ 187, 203, 255 },
+//         mkClassCase("A3") => .{ 191, 207, 255 },
+//         mkClassCase("A4"), mkClassCase("A5"), mkClassCase("Ap"), mkClassCase("Am") => .{ 202, 215, 255 },
+//         mkClassCase("A6") => .{ 199, 212, 255 },
+//         mkClassCase("A7") => .{ 200, 213, 255 },
+//         mkClassCase("A8") => .{ 213, 222, 255 },
+//         mkClassCase("A9") => .{ 219, 224, 255 },
+//         mkClassCase("F0") => .{ 224, 229, 255 },
+//         mkClassCase("F1"), mkClassCase("F2") => .{ 236, 239, 255 },
+//         mkClassCase("F3"), mkClassCase("F4") => .{ 224, 226, 255 },
+//         mkClassCase("F5") => .{ 248, 247, 255 },
+//         mkClassCase("F6") => .{ 244, 241, 255 },
+//         mkClassCase("F7") => .{ 246, 243, 255 },
+//         mkClassCase("F8") => .{ 255, 247, 252 },
+//         mkClassCase("F9") => .{ 255, 247, 252 },
+//         mkClassCase("G0") => .{ 255, 248, 252 },
+//         mkClassCase("G1") => .{ 255, 247, 248 },
+//         mkClassCase("G2") => .{ 255, 245, 242 },
+//         mkClassCase("G3"), mkClassCase("G4") => .{ 255, 241, 229 },
+//         mkClassCase("C5"), mkClassCase("G5") => .{ 255, 244, 234 },
+//         mkClassCase("C6"), mkClassCase("G6") => .{ 255, 244, 235 },
+//         mkClassCase("G7") => .{ 255, 244, 235 },
+//         mkClassCase("G8") => .{ 255, 237, 222 },
+//         mkClassCase("G9") => .{ 255, 239, 221 },
+//         mkClassCase("K0") => .{ 255, 238, 221 },
+//         mkClassCase("K1") => .{ 255, 224, 188 },
+//         mkClassCase("K2") => .{ 255, 227, 196 },
+//         mkClassCase("K3") => .{ 255, 222, 195 },
+//         mkClassCase("K4") => .{ 255, 216, 181 },
+//         mkClassCase("K5") => .{ 255, 210, 161 },
+//         mkClassCase("K6"), mkClassCase("K7") => .{ 255, 199, 142 },
+//         mkClassCase("K8"), mkClassCase("K9") => .{ 255, 209, 174 },
+//         mkClassCase("S0"), mkClassCase("M0") => .{ 255, 195, 139 },
+//         mkClassCase("S1"), mkClassCase("M1") => .{ 255, 204, 142 },
+//         mkClassCase("S2"), mkClassCase("M2") => .{ 255, 196, 131 },
+//         mkClassCase("S3"), mkClassCase("M3") => .{ 255, 206, 129 },
+//         mkClassCase("S4"), mkClassCase("M4") => .{ 255, 201, 127 },
+//         mkClassCase("S5"), mkClassCase("M5") => .{ 255, 204, 111 },
+//         mkClassCase("S6"), mkClassCase("M6") => .{ 255, 195, 112 },
+//         mkClassCase("M7"), mkClassCase("M8"), mkClassCase("M9") => .{ 255, 198, 109 },
+//         else => @compileError(std.fmt.comptimePrint("Unknown MK Class: {s}", .{mk_class})),
+//     };
+// }
+
+fn mkClassCase(class: *const [2]u8) u16 {
+    return @bitCast(class.*);
 }
 
 const terrain_divisions: u16 = 100;
