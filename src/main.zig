@@ -762,7 +762,7 @@ fn genTerrain(rand: std.Random) Terrain {
             amplitude /= 2.0;
         }
 
-        const y = perlin_output - 0.7;
+        const y = perlin_output - 0.65;
 
         terrain.vertices[vert_idx] = .{
             .x = x,
