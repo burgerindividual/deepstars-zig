@@ -19,7 +19,8 @@ pub fn main() !void {
     glfw.setErrorCallback(logGLFWError);
 
     // todo: switch to wayland when done with renderdoc
-    if (!glfw.init(.{ .platform = .wayland })) {
+    const preferred_platform: glfw.PlatformType = if (glfw.platformSupported(.wayland)) .wayland else .any;
+    if (!glfw.init(.{ .platform = preferred_platform })) {
         glfw_log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
         return error.GLFWInitFailed;
     }
@@ -707,7 +708,7 @@ fn rgbFromBv(bv: f64) f32x3 {
     return @floatCast(clamped_result);
 }
 
-const terrain_divisions: u16 = 50;
+const terrain_divisions: u16 = 75;
 const terrain_vertices: u16 = 2 + (terrain_divisions * 2);
 const terrain_indices: u32 = terrain_divisions * 6;
 
@@ -725,43 +726,43 @@ const Terrain = struct {
 
 fn genTerrain(rand: std.Random) Terrain {
     // TODO: software render with supersampling or msaa
-    // var raw_noise_array: [terrain_divisions + 1]f32 = undefined;
+    var raw_noise_array: [terrain_divisions + 1]f32 = undefined;
 
-    // for (0..raw_noise_array.len) |idx| {
-    //     const float = rand.float(f32);
-    //     const float_bits: u32 = @bitCast(float);
-    //     const sign_bit: u32 = @as(u32, rand.int(u1)) << 31;
-    //     raw_noise_array[idx] = @bitCast(float_bits | sign_bit);
-    // }
+    for (0..raw_noise_array.len) |idx| {
+        const float = rand.float(f32);
+        const float_bits: u32 = @bitCast(float);
+        const sign_bit: u32 = @as(u32, rand.int(u1)) << 31;
+        raw_noise_array[idx] = @bitCast(float_bits | sign_bit);
+    }
 
     var terrain: Terrain = undefined;
 
     var vert_idx: u16 = 0;
 
-    var y: f32 = -0.65;
+    // var y: f32 = -0.65;
     for (0..terrain_divisions + 1) |div_idx| {
         const x = @as(f32, @floatFromInt(2 * div_idx)) / @as(f32, @floatFromInt(terrain_divisions)) - 1.0;
+        // y += (rand.float(f32) - 0.5) * 0.07;
 
-        // const octaves = 5;
-        // var frequency: f32 = std.math.pow(f32, 2.0, @floatFromInt(-octaves));
-        // var amplitude: f32 = 0.15;
-        // var perlin_output: f32 = 0.0;
-        // for (0..octaves) |_| {
-        //     const sample_x = @as(f32, @floatFromInt(div_idx)) * frequency;
-        //     const sample_x_left: u32 = @intFromFloat(sample_x);
-        //     const sample_x_right = sample_x_left + 1;
-        //     const sample_x_fract = sample_x - @floor(sample_x);
-        //     perlin_output += amplitude * std.math.lerp(
-        //         raw_noise_array[sample_x_left],
-        //         raw_noise_array[sample_x_right],
-        //         sample_x_fract,
-        //     );
-        //     frequency *= 2.0;
-        //     amplitude /= 2.0;
-        // }
+        const octaves = 4;
+        var frequency: f32 = std.math.pow(f32, 2.0, @floatFromInt(-octaves));
+        var amplitude: f32 = 0.10;
+        var perlin_output: f32 = 0.0;
+        for (0..octaves) |_| {
+            const sample_x = @as(f32, @floatFromInt(div_idx)) * frequency;
+            const sample_x_left: u32 = @intFromFloat(sample_x);
+            const sample_x_right = sample_x_left + 1;
+            const sample_x_fract = sample_x - @floor(sample_x);
+            perlin_output += amplitude * std.math.lerp(
+                raw_noise_array[sample_x_left],
+                raw_noise_array[sample_x_right],
+                sample_x_fract,
+            );
+            frequency *= 2.0;
+            amplitude /= 2.0;
+        }
 
-        // const y = perlin_output - 0.7;
-        y += (rand.float(f32) - 0.5) * 0.07;
+        const y = perlin_output - 0.7;
 
         terrain.vertices[vert_idx] = .{
             .x = x,
