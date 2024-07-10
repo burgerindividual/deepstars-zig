@@ -2,20 +2,20 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .aarch64,
-            .cpu_model = .{
-                .explicit = &std.Target.aarch64.cpu.cortex_a53,
-            },
-            .os_tag = .linux,
-            .abi = .gnu,
-        },
         // .default_target = .{
-        //     .cpu_arch = .x86_64,
+        //     .cpu_arch = .aarch64,
         //     .cpu_model = .{
-        //         .explicit = &std.Target.x86.cpu.x86_64_v3,
+        //         .explicit = &std.Target.aarch64.cpu.cortex_a53,
         //     },
+        //     .os_tag = .linux,
+        //     .abi = .gnu,
         // },
+        .default_target = .{
+            .cpu_arch = .x86_64,
+            .cpu_model = .{
+                .explicit = &std.Target.x86.cpu.x86_64_v3,
+            },
+        },
     });
 
     const optimize = b.standardOptimizeOption(.{});

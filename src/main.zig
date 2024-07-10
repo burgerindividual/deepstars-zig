@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const glfw = @import("mach-glfw");
 const gl = @import("gl");
 const zm = @import("zmath");
@@ -8,18 +9,17 @@ var gl_procs: gl.ProcTable = undefined;
 const glfw_log = std.log.scoped(.glfw);
 const gl_log = std.log.scoped(.gl);
 
-var gpa = std.heap.GeneralPurposeAllocator(.{
-    .thread_safe = false,
-}){};
+// var gpa = std.heap.GeneralPurposeAllocator(.{
+//     .thread_safe = false,
+// }){};
 
 pub fn main() !void {
     @setFloatMode(.optimized);
-    // _ = try std.DynLib.open("/usr/lib/librenderdoc.so");
 
     glfw.setErrorCallback(logGLFWError);
 
     // todo: switch to wayland when done with renderdoc
-    if (!glfw.init(.{ .platform = .x11 })) {
+    if (!glfw.init(.{ .platform = .wayland })) {
         glfw_log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
         return error.GLFWInitFailed;
     }
@@ -70,6 +70,9 @@ pub fn main() !void {
     window.setFramebufferSizeCallback(onFramebufferResized);
     window.setKeyCallback(onKeyEvent);
 
+    // Disable cursor
+    window.setInputModeCursor(.hidden);
+
     // Enable VSync to avoid drawing more often than necessary.
     glfw.swapInterval(1);
 
@@ -103,13 +106,12 @@ pub fn main() !void {
     var random = std.Random.Xoroshiro128.init(@bitCast(std.time.milliTimestamp()));
     const rand = random.random();
 
-    const alloc = gpa.allocator();
+    // uncomment this to generate stars-preloaded.bin
+    // _ = genStars();
 
     ////
     //// Set up matrices and star geometry
     ////
-    const stars = try genStars(alloc);
-
     const up_dir_quaternion = zm.quatFromNormAxisAngle(
         zm.f32x4(1.0, 0.0, 0.0, 1.0),
         std.math.tau * rand.float(f32),
@@ -138,10 +140,11 @@ pub fn main() !void {
     );
 
     const aspect_ratio = @as(f32, @floatFromInt(preferred_width)) / @as(f32, @floatFromInt(preferred_height));
-    const fov_x = 50.0 * @as(f32, @floatFromInt(preferred_height)) / @as(f32, @floatFromInt(preferred_width));
+    const fov_x = 45.0;
+    const fov_y = fov_x * @as(f32, @floatFromInt(preferred_height)) / @as(f32, @floatFromInt(preferred_width));
     // don't use GL version, we want the depth values between 0 and 1
     const projection_matrix = zm.perspectiveFovRh(
-        fov_x * std.math.pi / 180.0,
+        fov_y * std.math.rad_per_deg,
         aspect_ratio,
         0.1,
         10.0,
@@ -260,8 +263,7 @@ pub fn main() !void {
     ////
 
     // Build the terrain
-    const terrain = try genTerrain(alloc, rand);
-    defer alloc.destroy(terrain);
+    const terrain = genTerrain(rand);
 
     // Create and fill the terrain vertex and index buffers
     gl.BindVertexArrayOES(terrain_vao);
@@ -428,22 +430,27 @@ pub fn main() !void {
     // bind default framebuffer
     gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
 
-    var global_star_scale = @as(f32, @floatFromInt(window.getFramebufferSize().height)) / 100.0;
+    var global_star_scale = @as(f32, @floatFromInt(window.getFramebufferSize().height)) / 120.0;
     var stars_fb_needs_clear = true;
-    // smear start time, smear end time
+    var smear_start_time: i64 = -1;
+    var smear_end_time: i64 = -1;
 
     main_loop: while (true) {
         glfw.pollEvents();
 
         if (window.shouldClose()) break :main_loop;
 
-        const ms_time: u64 = @intCast(std.time.milliTimestamp());
+        const ms_time: i64 = std.time.milliTimestamp();
 
-        // const stars_smear_opacity: f32 = @as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 3000)) / 3000.0;
-        const stars_smear_opacity = 0.0;
-
-        // stars.vertices[0].x = (@as(f32, @floatFromInt(@as(u14, @truncate(ms_time)))) / 8192.0) - 1.0;
-        // stars.vertices[0].y = @sin(@as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 10000)) / comptime (10000.0 / std.math.tau));
+        var stars_smear_opacity: f32 = 0.0;
+        if (ms_time > smear_start_time and ms_time < smear_end_time) {
+            const smear_time_remaining = smear_end_time - ms_time;
+            stars_smear_opacity = @min(@as(f32, @floatFromInt(smear_time_remaining)) / 5000.0, 1.0);
+        } else if (ms_time >= smear_end_time) {
+            smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 120000);
+            smear_end_time = smear_start_time + rand.intRangeAtMost(u32, 20000, 50000);
+            stars_fb_needs_clear = true;
+        }
 
         if (resize_event) |e| {
             const width: gl.sizei = @intCast(e.width);
@@ -457,7 +464,7 @@ pub fn main() !void {
             );
             stars_fb_needs_clear = true;
 
-            global_star_scale = @as(f32, @floatFromInt(e.height)) / 100.0;
+            global_star_scale = @as(f32, @floatFromInt(e.height)) / 120.0;
 
             resize_event = null;
         }
@@ -495,7 +502,7 @@ pub fn main() !void {
         gl.UseProgram(stars_program);
         gl.BindVertexArrayOES(stars_vao);
 
-        const angle = @as(f32, @floatFromInt(@as(u31, @truncate(ms_time)) % 600000)) * comptime (std.math.tau / 600000.0);
+        const angle = @as(f32, @floatFromInt(@mod(ms_time, 800000))) * (std.math.tau / 800000.0);
         const earth_rot_quaternion = zm.quatFromRollPitchYawV(zm.f32x4(
             0.0,
             0.0,
@@ -543,13 +550,16 @@ pub fn main() !void {
     }
 }
 
+// 14 misclassified stars in the initial dataset
 const star_count: u16 = 9110 - 14;
+
+const stars = genStarsPreloaded();
 
 const stars_color_attrib = 0;
 const stars_pos_attrib = 1;
 const stars_size_attrib = 2;
 
-const StarVertex = struct {
+const StarVertex = extern struct {
     r: f32,
     g: f32,
     b: f32,
@@ -562,15 +572,25 @@ const StarVertex = struct {
     size: f32,
 };
 
-const Stars = struct {
+const Stars = extern struct {
     vertices: [star_count]StarVertex,
 };
 
-fn genStars(alloc: std.mem.Allocator) !*Stars {
-    const stars = try alloc.create(Stars);
+fn genStarsPreloaded() Stars {
+    std.debug.assert(builtin.cpu.arch.endian() == .little);
+
+    const preloaded_data = @embedFile("assets/stars-preloaded.bin");
+    const non_terminated_data = @as(*const [preloaded_data.len]u8, preloaded_data);
+
+    return @bitCast(non_terminated_data.*);
+}
+
+fn genStars() Stars {
+    var stars_uninit: Stars = undefined;
 
     const bcs5_data = @embedFile("assets/bsc5.dat");
 
+    var idx: u16 = 0;
     var iter = std.mem.splitScalar(u8, bcs5_data[0..], '\n');
     while (iter.next()) |line| {
         if (line.len < 113) {
@@ -584,38 +604,65 @@ fn genStars(alloc: std.mem.Allocator) !*Stars {
         const declination_deg: f64 = @floatFromInt(std.fmt.parseInt(u8, line[84..86], 10) catch continue);
         const declination_min: f64 = @floatFromInt(std.fmt.parseInt(u8, line[86..88], 10) catch continue);
         const declination_sec: f64 = @floatFromInt(std.fmt.parseInt(u8, line[88..90], 10) catch continue);
-        const v_mag_sign: f32 = if (line[102] == '-') -1.0 else 1.0;
-        const v_mag_num = std.fmt.parseFloat(f32, line[103..107]) catch continue;
-        const bv = std.fmt.parseFloat(f32, line[109..114]) catch continue;
+        const v_magnitude = std.fmt.parseFloat(
+            f32,
+            std.mem.trim(u8, line[102..107], &std.ascii.whitespace),
+        ) catch continue;
+        // some entries don't have a B-V, so fall back to 0.0
+        const bv = std.fmt.parseFloat(
+            f32,
+            std.mem.trim(u8, line[109..114], &std.ascii.whitespace),
+        ) catch 0.0;
 
-        const right_ascension_rad: f64 = (right_ascension_hr + right_ascension_min / 60.0 + right_ascension_sec / 3600.0) * (std.math.pi / 24.0);
-        const declination_rad: f64 = declination_sign * (declination_deg + declination_min / 60.0 + declination_sec / 3600.0) * (std.math.pi / 180.0);
+        const right_ascension_rad: f64 = (right_ascension_hr + right_ascension_min / 60.0 + right_ascension_sec / 3600.0) * (std.math.tau / 24.0);
+        const declination_rad: f64 = declination_sign * (declination_deg + declination_min / 60.0 + declination_sec / 3600.0) * std.math.rad_per_deg;
         const color = rgbFromBv(bv);
-        const v_magnitude = v_mag_sign * v_mag_num;
+
+        const x: f32 = @floatCast(@cos(declination_rad) * @cos(right_ascension_rad));
+        const y: f32 = @floatCast(@cos(declination_rad) * @sin(right_ascension_rad));
+        const z: f32 = @floatCast(@sin(declination_rad));
+
+        const star_brightness_modifier = 5.5;
         // vmag high -1.46, low 8.00ish
+        const scaled_mag: f32 = @floatCast(@min(std.math.pow(
+            f64,
+            100.0,
+            (-v_magnitude - 1.46 + star_brightness_modifier) / 5.0,
+        ), 1.0));
+        // the sqrt accounts for the surface area having a squared relationship to diameter.
+        // having the alpha and the size be the square root of the scaled magnitude makes the
+        // final percieved brightness the same as the scaled magnitude.
+        const sqrt_mag = @sqrt(scaled_mag);
 
-        _ = v_magnitude;
-        _ = right_ascension_rad;
-        _ = declination_rad;
-        _ = color;
+        const color_trunc: f32x3 = @floatCast(color);
 
-        // reexport these to save on binary size
+        stars_uninit.vertices[idx] = StarVertex{
+            .r = color_trunc[0],
+            .g = color_trunc[1],
+            .b = color_trunc[2],
+            .a = sqrt_mag,
 
-        // stars_uninit.vertices[idx] = StarVertex{
-        //     .r = rand.float(f32),
-        //     .g = rand.float(f32),
-        //     .b = rand.float(f32),
-        //     .a = rand.float(f32),
+            .x = x,
+            .y = y,
+            .z = z,
 
-        //     .x = rand.float(f32) - 0.5,
-        //     .y = rand.float(f32) - 0.5,
-        //     .z = rand.float(f32) - 0.5,
+            .size = sqrt_mag,
+        };
 
-        //     .size = rand.float(f32),
-        // };
+        idx += 1;
     }
 
-    return stars;
+    std.debug.assert(idx == star_count);
+
+    const file = std.fs.cwd().createFile(
+        "stars-preloaded.bin",
+        .{},
+    ) catch unreachable;
+    defer file.close();
+
+    file.writeAll(@as(*const [@sizeOf(Stars)]u8, @ptrCast(&stars_uninit))) catch unreachable;
+
+    return stars_uninit;
 }
 
 const f64x4 = @Vector(4, f64);
@@ -660,74 +707,7 @@ fn rgbFromBv(bv: f64) f32x3 {
     return @floatCast(clamped_result);
 }
 
-// fn rgbColorFromMkClass(mk_class: [2]u8) @Vector(3, u8) {
-//     return switch (@as(u16, @bitCast(mk_class))) {
-//         mkClassCase("O4"), mkClassCase("O5") => .{ 155, 176, 255 },
-//         mkClassCase("O6") => .{ 162, 184, 255 },
-//         mkClassCase("O7") => .{ 157, 177, 255 },
-//         mkClassCase("O8") => .{ 157, 177, 255 },
-//         mkClassCase("O9") => .{ 154, 178, 255 },
-//         mkClassCase("B0") => .{ 156, 178, 255 },
-//         mkClassCase("B1") => .{ 160, 182, 255 },
-//         mkClassCase("B2") => .{ 160, 180, 255 },
-//         mkClassCase("B3") => .{ 165, 185, 255 },
-//         mkClassCase("B4") => .{ 164, 184, 255 },
-//         mkClassCase("B5") => .{ 170, 191, 255 },
-//         mkClassCase("B6") => .{ 172, 189, 255 },
-//         mkClassCase("B7") => .{ 173, 191, 255 },
-//         mkClassCase("B8") => .{ 177, 195, 255 },
-//         mkClassCase("B9") => .{ 181, 198, 255 },
-//         mkClassCase("A0") => .{ 185, 201, 255 },
-//         mkClassCase("A1") => .{ 181, 199, 255 },
-//         mkClassCase("A2") => .{ 187, 203, 255 },
-//         mkClassCase("A3") => .{ 191, 207, 255 },
-//         mkClassCase("A4"), mkClassCase("A5"), mkClassCase("Ap"), mkClassCase("Am") => .{ 202, 215, 255 },
-//         mkClassCase("A6") => .{ 199, 212, 255 },
-//         mkClassCase("A7") => .{ 200, 213, 255 },
-//         mkClassCase("A8") => .{ 213, 222, 255 },
-//         mkClassCase("A9") => .{ 219, 224, 255 },
-//         mkClassCase("F0") => .{ 224, 229, 255 },
-//         mkClassCase("F1"), mkClassCase("F2") => .{ 236, 239, 255 },
-//         mkClassCase("F3"), mkClassCase("F4") => .{ 224, 226, 255 },
-//         mkClassCase("F5") => .{ 248, 247, 255 },
-//         mkClassCase("F6") => .{ 244, 241, 255 },
-//         mkClassCase("F7") => .{ 246, 243, 255 },
-//         mkClassCase("F8") => .{ 255, 247, 252 },
-//         mkClassCase("F9") => .{ 255, 247, 252 },
-//         mkClassCase("G0") => .{ 255, 248, 252 },
-//         mkClassCase("G1") => .{ 255, 247, 248 },
-//         mkClassCase("G2") => .{ 255, 245, 242 },
-//         mkClassCase("G3"), mkClassCase("G4") => .{ 255, 241, 229 },
-//         mkClassCase("C5"), mkClassCase("G5") => .{ 255, 244, 234 },
-//         mkClassCase("C6"), mkClassCase("G6") => .{ 255, 244, 235 },
-//         mkClassCase("G7") => .{ 255, 244, 235 },
-//         mkClassCase("G8") => .{ 255, 237, 222 },
-//         mkClassCase("G9") => .{ 255, 239, 221 },
-//         mkClassCase("K0") => .{ 255, 238, 221 },
-//         mkClassCase("K1") => .{ 255, 224, 188 },
-//         mkClassCase("K2") => .{ 255, 227, 196 },
-//         mkClassCase("K3") => .{ 255, 222, 195 },
-//         mkClassCase("K4") => .{ 255, 216, 181 },
-//         mkClassCase("K5") => .{ 255, 210, 161 },
-//         mkClassCase("K6"), mkClassCase("K7") => .{ 255, 199, 142 },
-//         mkClassCase("K8"), mkClassCase("K9") => .{ 255, 209, 174 },
-//         mkClassCase("S0"), mkClassCase("M0") => .{ 255, 195, 139 },
-//         mkClassCase("S1"), mkClassCase("M1") => .{ 255, 204, 142 },
-//         mkClassCase("S2"), mkClassCase("M2") => .{ 255, 196, 131 },
-//         mkClassCase("S3"), mkClassCase("M3") => .{ 255, 206, 129 },
-//         mkClassCase("S4"), mkClassCase("M4") => .{ 255, 201, 127 },
-//         mkClassCase("S5"), mkClassCase("M5") => .{ 255, 204, 111 },
-//         mkClassCase("S6"), mkClassCase("M6") => .{ 255, 195, 112 },
-//         mkClassCase("M7"), mkClassCase("M8"), mkClassCase("M9") => .{ 255, 198, 109 },
-//         else => @compileError(std.fmt.comptimePrint("Unknown MK Class: {s}", .{mk_class})),
-//     };
-// }
-
-fn mkClassCase(class: *const [2]u8) u16 {
-    return @bitCast(class.*);
-}
-
-const terrain_divisions: u16 = 100;
+const terrain_divisions: u16 = 50;
 const terrain_vertices: u16 = 2 + (terrain_divisions * 2);
 const terrain_indices: u32 = terrain_divisions * 6;
 
@@ -743,17 +723,45 @@ const Terrain = struct {
     indices: [terrain_indices]u16,
 };
 
-fn genTerrain(alloc: std.mem.Allocator, rand: std.Random) !*Terrain {
-    // TODO: https://arpit.substack.com/p/1d-procedural-terrain-generation
+fn genTerrain(rand: std.Random) Terrain {
     // TODO: software render with supersampling or msaa
+    // var raw_noise_array: [terrain_divisions + 1]f32 = undefined;
 
-    var terrain = try alloc.create(Terrain);
+    // for (0..raw_noise_array.len) |idx| {
+    //     const float = rand.float(f32);
+    //     const float_bits: u32 = @bitCast(float);
+    //     const sign_bit: u32 = @as(u32, rand.int(u1)) << 31;
+    //     raw_noise_array[idx] = @bitCast(float_bits | sign_bit);
+    // }
+
+    var terrain: Terrain = undefined;
 
     var vert_idx: u16 = 0;
 
+    var y: f32 = -0.65;
     for (0..terrain_divisions + 1) |div_idx| {
         const x = @as(f32, @floatFromInt(2 * div_idx)) / @as(f32, @floatFromInt(terrain_divisions)) - 1.0;
-        const y = -0.5 + (rand.float(f32) * 0.1);
+
+        // const octaves = 5;
+        // var frequency: f32 = std.math.pow(f32, 2.0, @floatFromInt(-octaves));
+        // var amplitude: f32 = 0.15;
+        // var perlin_output: f32 = 0.0;
+        // for (0..octaves) |_| {
+        //     const sample_x = @as(f32, @floatFromInt(div_idx)) * frequency;
+        //     const sample_x_left: u32 = @intFromFloat(sample_x);
+        //     const sample_x_right = sample_x_left + 1;
+        //     const sample_x_fract = sample_x - @floor(sample_x);
+        //     perlin_output += amplitude * std.math.lerp(
+        //         raw_noise_array[sample_x_left],
+        //         raw_noise_array[sample_x_right],
+        //         sample_x_fract,
+        //     );
+        //     frequency *= 2.0;
+        //     amplitude /= 2.0;
+        // }
+
+        // const y = perlin_output - 0.7;
+        y += (rand.float(f32) - 0.5) * 0.07;
 
         terrain.vertices[vert_idx] = .{
             .x = x,
