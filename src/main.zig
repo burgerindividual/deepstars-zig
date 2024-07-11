@@ -9,10 +9,6 @@ var gl_procs: gl.ProcTable = undefined;
 const glfw_log = std.log.scoped(.glfw);
 const gl_log = std.log.scoped(.gl);
 
-// var gpa = std.heap.GeneralPurposeAllocator(.{
-//     .thread_safe = false,
-// }){};
-
 pub fn main() !void {
     @setFloatMode(.optimized);
 
@@ -108,7 +104,13 @@ pub fn main() !void {
     const rand = random.random();
 
     // uncomment this to generate stars-preloaded.bin
-    // _ = genStars();
+    // const loaded_stars = genStars();
+    // const file = std.fs.cwd().createFile(
+    //     "stars-preloaded.bin",
+    //     .{},
+    // ) catch unreachable;
+    // file.writeAll(@as(*const [@sizeOf(StarsGeometry)]u8, @ptrCast(&loaded_stars))) catch unreachable;
+    // file.close();
 
     ////
     //// Set up matrices and star geometry
@@ -448,7 +450,7 @@ pub fn main() !void {
             const smear_time_remaining = smear_end_time - ms_time;
             stars_smear_opacity = @min(@as(f32, @floatFromInt(smear_time_remaining)) / 5000.0, 1.0);
         } else if (ms_time >= smear_end_time) {
-            smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 120000);
+            smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 80000);
             smear_end_time = smear_start_time + rand.intRangeAtMost(u32, 20000, 50000);
             stars_fb_needs_clear = true;
         }
@@ -573,11 +575,11 @@ const StarVertex = extern struct {
     size: f32,
 };
 
-const Stars = extern struct {
+const StarsGeometry = extern struct {
     vertices: [star_count]StarVertex,
 };
 
-fn genStarsPreloaded() Stars {
+fn genStarsPreloaded() StarsGeometry {
     std.debug.assert(builtin.cpu.arch.endian() == .little);
 
     const preloaded_data = @embedFile("assets/stars-preloaded.bin");
@@ -586,8 +588,8 @@ fn genStarsPreloaded() Stars {
     return @bitCast(non_terminated_data.*);
 }
 
-fn genStars() Stars {
-    var stars_uninit: Stars = undefined;
+fn genStars() StarsGeometry {
+    var stars_uninit: StarsGeometry = undefined;
 
     const bcs5_data = @embedFile("assets/bsc5.dat");
 
@@ -630,6 +632,7 @@ fn genStars() Stars {
             100.0,
             (-v_magnitude - 1.46 + star_brightness_modifier) / 5.0,
         ), 1.0));
+        @exp(1);
         // the sqrt accounts for the surface area having a squared relationship to diameter.
         // having the alpha and the size be the square root of the scaled magnitude makes the
         // final percieved brightness the same as the scaled magnitude.
@@ -654,14 +657,6 @@ fn genStars() Stars {
     }
 
     std.debug.assert(idx == star_count);
-
-    const file = std.fs.cwd().createFile(
-        "stars-preloaded.bin",
-        .{},
-    ) catch unreachable;
-    defer file.close();
-
-    file.writeAll(@as(*const [@sizeOf(Stars)]u8, @ptrCast(&stars_uninit))) catch unreachable;
 
     return stars_uninit;
 }
@@ -719,12 +714,12 @@ const Vertex2D = struct {
     y: f32,
 };
 
-const Terrain = struct {
+const TerrainGeometry = struct {
     vertices: [terrain_vertices]Vertex2D,
     indices: [terrain_indices]u16,
 };
 
-fn genTerrain(rand: std.Random) Terrain {
+fn genTerrain(rand: std.Random) TerrainGeometry {
     // TODO: software render with supersampling or msaa
     var raw_noise_array: [terrain_divisions + 1]f32 = undefined;
 
@@ -735,7 +730,7 @@ fn genTerrain(rand: std.Random) Terrain {
         raw_noise_array[idx] = @bitCast(float_bits | sign_bit);
     }
 
-    var terrain: Terrain = undefined;
+    var terrain: TerrainGeometry = undefined;
 
     var vert_idx: u16 = 0;
 

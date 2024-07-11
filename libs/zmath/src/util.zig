@@ -25,18 +25,21 @@ const math = std.math;
 const expect = std.testing.expect;
 
 pub fn getTranslationVec(m: zm.Mat) zm.Vec {
+    @setFloatMode(.optimized);
     var translation = m[3];
     translation[3] = 0;
     return translation;
 }
 
 pub fn setTranslationVec(m: *zm.Mat, translation: zm.Vec) void {
+    @setFloatMode(.optimized);
     const w = m[3][3];
     m[3] = translation;
     m[3][3] = w;
 }
 
 pub fn getScaleVec(m: zm.Mat) zm.Vec {
+    @setFloatMode(.optimized);
     const scale_x = zm.length3(zm.f32x4(m[0][0], m[1][0], m[2][0], 0))[0];
     const scale_y = zm.length3(zm.f32x4(m[0][1], m[1][1], m[2][1], 0))[0];
     const scale_z = zm.length3(zm.f32x4(m[0][2], m[1][2], m[2][2], 0))[0];
@@ -44,6 +47,7 @@ pub fn getScaleVec(m: zm.Mat) zm.Vec {
 }
 
 pub fn getRotationQuat(_m: zm.Mat) zm.Quat {
+    @setFloatMode(.optimized);
     // Ortho normalize given matrix.
     const c1 = zm.normalize3(zm.f32x4(_m[0][0], _m[1][0], _m[2][0], 0));
     const c2 = zm.normalize3(zm.f32x4(_m[0][1], _m[1][1], _m[2][1], 0));
@@ -64,14 +68,17 @@ pub fn getRotationQuat(_m: zm.Mat) zm.Quat {
 }
 
 pub fn getAxisX(m: zm.Mat) zm.Vec {
+    @setFloatMode(.optimized);
     return zm.normalize3(zm.f32x4(m[0][0], m[0][1], m[0][2], 0.0));
 }
 
 pub fn getAxisY(m: zm.Mat) zm.Vec {
+    @setFloatMode(.optimized);
     return zm.normalize3(zm.f32x4(m[1][0], m[1][1], m[1][2], 0.0));
 }
 
 pub fn getAxisZ(m: zm.Mat) zm.Vec {
+    @setFloatMode(.optimized);
     return zm.normalize3(zm.f32x4(m[2][0], m[2][1], m[2][2], 0.0));
 }
 

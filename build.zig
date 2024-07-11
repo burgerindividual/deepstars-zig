@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
+        .single_threaded = true,
     });
 
     exe.root_module.addImport("mach-glfw", b.dependency("mach-glfw", .{

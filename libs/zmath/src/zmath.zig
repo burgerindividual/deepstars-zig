@@ -291,9 +291,11 @@ const has_fma = if (cpu_arch == .x86_64) std.Target.x86.featureSetHas(builtin.cp
 //
 // ------------------------------------------------------------------------------
 pub inline fn f32x4(e0: f32, e1: f32, e2: f32, e3: f32) F32x4 {
+    @setFloatMode(.optimized);
     return .{ e0, e1, e2, e3 };
 }
 pub inline fn f32x8(e0: f32, e1: f32, e2: f32, e3: f32, e4: f32, e5: f32, e6: f32, e7: f32) F32x8 {
+    @setFloatMode(.optimized);
     return .{ e0, e1, e2, e3, e4, e5, e6, e7 };
 }
 // zig fmt: off
@@ -305,19 +307,24 @@ pub inline fn f32x16(
 // zig fmt: on
 
 pub inline fn f32x4s(e0: f32) F32x4 {
+    @setFloatMode(.optimized);
     return splat(F32x4, e0);
 }
 pub inline fn f32x8s(e0: f32) F32x8 {
+    @setFloatMode(.optimized);
     return splat(F32x8, e0);
 }
 pub inline fn f32x16s(e0: f32) F32x16 {
+    @setFloatMode(.optimized);
     return splat(F32x16, e0);
 }
 
 pub inline fn boolx4(e0: bool, e1: bool, e2: bool, e3: bool) Boolx4 {
+    @setFloatMode(.optimized);
     return .{ e0, e1, e2, e3 };
 }
 pub inline fn boolx8(e0: bool, e1: bool, e2: bool, e3: bool, e4: bool, e5: bool, e6: bool, e7: bool) Boolx8 {
+    @setFloatMode(.optimized);
     return .{ e0, e1, e2, e3, e4, e5, e6, e7 };
 }
 // zig fmt: off
@@ -329,17 +336,21 @@ pub inline fn boolx16(
 // zig fmt: on
 
 pub inline fn veclen(comptime T: type) comptime_int {
+    @setFloatMode(.optimized);
     return @typeInfo(T).Vector.len;
 }
 
 pub inline fn splat(comptime T: type, value: f32) T {
+    @setFloatMode(.optimized);
     return @splat(value);
 }
 pub inline fn splatInt(comptime T: type, value: u32) T {
+    @setFloatMode(.optimized);
     return @splat(@bitCast(value));
 }
 
 pub fn load(mem: []const f32, comptime T: type, comptime len: u32) T {
+    @setFloatMode(.optimized);
     var v = splat(T, 0.0);
     const loop_len = if (len == 0) veclen(T) else len;
     comptime var i: u32 = 0;
@@ -367,6 +378,7 @@ test "zmath.load" {
 }
 
 pub fn store(mem: []f32, v: anytype, comptime len: u32) void {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     const loop_len = if (len == 0) veclen(T) else len;
     comptime var i: u32 = 0;
@@ -387,32 +399,41 @@ test "zmath.store" {
 }
 
 pub inline fn loadArr2(arr: [2]f32) F32x4 {
+    @setFloatMode(.optimized);
     return f32x4(arr[0], arr[1], 0.0, 0.0);
 }
 pub inline fn loadArr2zw(arr: [2]f32, z: f32, w: f32) F32x4 {
+    @setFloatMode(.optimized);
     return f32x4(arr[0], arr[1], z, w);
 }
 pub inline fn loadArr3(arr: [3]f32) F32x4 {
+    @setFloatMode(.optimized);
     return f32x4(arr[0], arr[1], arr[2], 0.0);
 }
 pub inline fn loadArr3w(arr: [3]f32, w: f32) F32x4 {
+    @setFloatMode(.optimized);
     return f32x4(arr[0], arr[1], arr[2], w);
 }
 pub inline fn loadArr4(arr: [4]f32) F32x4 {
+    @setFloatMode(.optimized);
     return f32x4(arr[0], arr[1], arr[2], arr[3]);
 }
 
 pub inline fn storeArr2(arr: *[2]f32, v: F32x4) void {
+    @setFloatMode(.optimized);
     arr.* = .{ v[0], v[1] };
 }
 pub inline fn storeArr3(arr: *[3]f32, v: F32x4) void {
+    @setFloatMode(.optimized);
     arr.* = .{ v[0], v[1], v[2] };
 }
 pub inline fn storeArr4(arr: *[4]f32, v: F32x4) void {
+    @setFloatMode(.optimized);
     arr.* = .{ v[0], v[1], v[2], v[3] };
 }
 
 pub inline fn arr3Ptr(ptr: anytype) *const [3]f32 {
+    @setFloatMode(.optimized);
     comptime assert(@typeInfo(@TypeOf(ptr)) == .Pointer);
     const T = std.meta.Child(@TypeOf(ptr));
     comptime assert(T == F32x4);
@@ -420,6 +441,7 @@ pub inline fn arr3Ptr(ptr: anytype) *const [3]f32 {
 }
 
 pub inline fn arrNPtr(ptr: anytype) [*]const f32 {
+    @setFloatMode(.optimized);
     comptime assert(@typeInfo(@TypeOf(ptr)) == .Pointer);
     const T = std.meta.Child(@TypeOf(ptr));
     comptime assert(T == Mat or T == F32x4 or T == F32x8 or T == F32x16);
@@ -456,12 +478,15 @@ test "zmath.loadArr" {
 }
 
 pub inline fn vecToArr2(v: Vec) [2]f32 {
+    @setFloatMode(.optimized);
     return .{ v[0], v[1] };
 }
 pub inline fn vecToArr3(v: Vec) [3]f32 {
+    @setFloatMode(.optimized);
     return .{ v[0], v[1], v[2] };
 }
 pub inline fn vecToArr4(v: Vec) [4]f32 {
+    @setFloatMode(.optimized);
     return .{ v[0], v[1], v[2], v[3] };
 }
 // ------------------------------------------------------------------------------
@@ -470,6 +495,7 @@ pub inline fn vecToArr4(v: Vec) [4]f32 {
 //
 // ------------------------------------------------------------------------------
 pub fn all(vb: anytype, comptime len: u32) bool {
+    @setFloatMode(.optimized);
     const T = @TypeOf(vb);
     if (len > veclen(T)) {
         @compileError("zmath.all(): 'len' is greater than vector len of type " ++ @typeName(T));
@@ -497,6 +523,7 @@ test "zmath.all" {
 }
 
 pub fn any(vb: anytype, comptime len: u32) bool {
+    @setFloatMode(.optimized);
     const T = @TypeOf(vb);
     if (len > veclen(T)) {
         @compileError("zmath.any(): 'len' is greater than vector len of type " ++ @typeName(T));
@@ -632,6 +659,7 @@ test "zmath.isInBounds" {
 }
 
 pub inline fn andInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     const Tu = @Vector(veclen(T), u32);
     const v0u = @as(Tu, @bitCast(v0));
@@ -656,6 +684,7 @@ test "zmath.andInt" {
 }
 
 pub inline fn andNotInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     const Tu = @Vector(veclen(T), u32);
     const v0u = @as(Tu, @bitCast(v0));
@@ -678,6 +707,7 @@ test "zmath.andNotInt" {
 }
 
 pub inline fn orInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     const Tu = @Vector(veclen(T), u32);
     const v0u = @as(Tu, @bitCast(v0));
@@ -706,6 +736,7 @@ test "zmath.orInt" {
 }
 
 pub inline fn norInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     const Tu = @Vector(veclen(T), u32);
     const v0u = @as(Tu, @bitCast(v0));
@@ -714,6 +745,7 @@ pub inline fn norInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
 }
 
 pub inline fn xorInt(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     const Tu = @Vector(veclen(T), u32);
     const v0u = @as(Tu, @bitCast(v0));
@@ -742,6 +774,7 @@ test "zmath.xorInt" {
 }
 
 pub inline fn minFast(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     return select(v0 < v1, v0, v1); // minps
 }
 test "zmath.minFast" {
@@ -765,6 +798,7 @@ test "zmath.minFast" {
 }
 
 pub inline fn maxFast(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     return select(v0 > v1, v0, v1); // maxps
 }
 test "zmath.maxFast" {
@@ -787,6 +821,7 @@ test "zmath.maxFast" {
 }
 
 pub inline fn min(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     // This will handle inf & nan
     return @min(v0, v1); // minps, cmpunordps, andps, andnps, orps
 }
@@ -831,6 +866,7 @@ test "zmath.min" {
 }
 
 pub inline fn max(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     // This will handle inf & nan
     return @max(v0, v1); // maxps, cmpunordps, andps, andnps, orps
 }
@@ -873,6 +909,7 @@ test "zmath.max" {
 }
 
 pub fn round(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     if (cpu_arch == .x86_64 and has_avx) {
         if (T == F32x4) {
@@ -971,6 +1008,7 @@ test "zmath.round" {
 }
 
 pub fn trunc(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     if (cpu_arch == .x86_64 and has_avx) {
         if (T == F32x4) {
@@ -1060,6 +1098,7 @@ test "zmath.trunc" {
 }
 
 pub fn floor(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     if (cpu_arch == .x86_64 and has_avx) {
         if (T == F32x4) {
@@ -1152,6 +1191,7 @@ test "zmath.floor" {
 }
 
 pub fn ceil(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     if (cpu_arch == .x86_64 and has_avx) {
         if (T == F32x4) {
@@ -1244,6 +1284,7 @@ test "zmath.ceil" {
 }
 
 pub inline fn clamp(v: anytype, vmin: anytype, vmax: anytype) @TypeOf(v, vmin, vmax) {
+    @setFloatMode(.optimized);
     var result = max(vmin, v);
     result = min(vmax, result);
     return result;
@@ -1274,6 +1315,7 @@ test "zmath.clamp" {
 }
 
 pub inline fn clampFast(v: anytype, vmin: anytype, vmax: anytype) @TypeOf(v, vmin, vmax) {
+    @setFloatMode(.optimized);
     var result = maxFast(vmin, v);
     result = minFast(vmax, result);
     return result;
@@ -1287,6 +1329,7 @@ test "zmath.clampFast" {
 }
 
 pub inline fn saturate(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     var result = max(v, splat(T, 0.0));
     result = min(result, splat(T, 1.0));
@@ -1318,6 +1361,7 @@ test "zmath.saturate" {
 }
 
 pub inline fn saturateFast(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     var result = maxFast(v, splat(T, 0.0));
     result = minFast(result, splat(T, 1.0));
@@ -1347,32 +1391,39 @@ test "zmath.saturateFast" {
 }
 
 pub inline fn sqrt(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     return @sqrt(v); // sqrtps
 }
 
 pub inline fn abs(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     return @abs(v); // load, andps
 }
 
 pub inline fn select(mask: anytype, v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     return @select(f32, mask, v0, v1);
 }
 
 pub inline fn lerp(v0: anytype, v1: anytype, t: f32) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     return v0 + (v1 - v0) * splat(T, t); // subps, shufps, addps, mulps
 }
 
 pub inline fn lerpV(v0: anytype, v1: anytype, t: anytype) @TypeOf(v0, v1, t) {
+    @setFloatMode(.optimized);
     return v0 + (v1 - v0) * t; // subps, addps, mulps
 }
 
 pub inline fn lerpInverse(v0: anytype, v1: anytype, t: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     return (splat(T, t) - v0) / (v1 - v0);
 }
 
 pub inline fn lerpInverseV(v0: anytype, v1: anytype, t: anytype) @TypeOf(v0, v1, t) {
+    @setFloatMode(.optimized);
     return (t - v0) / (v1 - v0);
 }
 test "zmath.lerpInverse" {
@@ -1385,11 +1436,13 @@ test "zmath.lerpInverse" {
 // Frame rate independent lerp (or "damp"), for approaching things over time.
 // Reference: https://www.gamedeveloper.com/programming/improved-lerp-smoothing-
 pub inline fn lerpOverTime(v0: anytype, v1: anytype, rate: anytype, dt: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     const t = std.math.exp2(-rate * dt);
     return lerp(v0, v1, t);
 }
 
 pub inline fn lerpVOverTime(v0: anytype, v1: anytype, rate: anytype, dt: anytype) @TypeOf(v0, v1, rate, dt) {
+    @setFloatMode(.optimized);
     const t = std.math.exp2(-rate * dt);
     return lerpV(v0, v1, t);
 }
@@ -1401,6 +1454,7 @@ test "zmath.lerpOverTime" {
 
 /// To transform a vector of values from one range to another.
 pub inline fn mapLinear(v: anytype, min1: anytype, max1: anytype, min2: anytype, max2: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     const min1V = splat(T, min1);
     const max1V = splat(T, max1);
@@ -1411,6 +1465,7 @@ pub inline fn mapLinear(v: anytype, min1: anytype, max1: anytype, min2: anytype,
 }
 
 pub inline fn mapLinearV(v: anytype, min1: anytype, max1: anytype, min2: anytype, max2: anytype) @TypeOf(v, min1, max1, min2, max2) {
+    @setFloatMode(.optimized);
     const d = max1 - min1;
     return min2 + (v - min1) * (max2 - min2) / d;
 }
@@ -1435,6 +1490,7 @@ pub inline fn swizzle(
 }
 
 pub inline fn mod(v0: anytype, v1: anytype) @TypeOf(v0, v1) {
+    @setFloatMode(.optimized);
     // vdivps, vroundps, vmulps, vsubps
     return v0 - v1 * trunc(v0 / v1);
 }
@@ -1456,6 +1512,7 @@ test "zmath.mod" {
 }
 
 pub fn modAngle(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     return switch (T) {
         f32 => modAngle32(v),
@@ -1465,6 +1522,7 @@ pub fn modAngle(v: anytype) @TypeOf(v) {
 }
 
 pub inline fn modAngle32xN(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     return v - splat(T, math.tau) * round(v * splat(T, 1.0 / math.tau)); // 2 x vmulps, 2 x load, vroundps, vaddps
 }
@@ -1478,20 +1536,12 @@ test "zmath.modAngle" {
 }
 
 pub inline fn mulAdd(v0: anytype, v1: anytype, v2: anytype) @TypeOf(v0, v1, v2) {
-    const T = @TypeOf(v0, v1, v2);
-    if (@import("zmath_options").enable_cross_platform_determinism) {
-        return v0 * v1 + v2; // Compiler will generate mul, add sequence (no fma even if the target supports it).
-    } else {
-        if (cpu_arch == .x86_64 and has_avx and has_fma) {
-            return @mulAdd(T, v0, v1, v2);
-        } else {
-            // NOTE(mziulek): On .x86_64 without HW fma instructions @mulAdd maps to really slow code!
-            return v0 * v1 + v2;
-        }
-    }
+    @setFloatMode(.optimized);
+    return v0 * v1 + v2;
 }
 
 fn sin32xN(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     // 11-degree minimax approximation
     const T = @TypeOf(v);
 
@@ -1542,6 +1592,7 @@ test "zmath.sin" {
 }
 
 fn cos32xN(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     // 10-degree minimax approximation
     const T = @TypeOf(v);
 
@@ -1590,6 +1641,7 @@ test "zmath.cos" {
 }
 
 pub fn sin(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     return switch (T) {
         f32 => sin32(v),
@@ -1599,6 +1651,7 @@ pub fn sin(v: anytype) @TypeOf(v) {
 }
 
 pub fn cos(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     return switch (T) {
         f32 => cos32(v),
@@ -1608,6 +1661,7 @@ pub fn cos(v: anytype) @TypeOf(v) {
 }
 
 pub fn sincos(v: anytype) [2]@TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     return switch (T) {
         f32 => sincos32(v),
@@ -1617,6 +1671,7 @@ pub fn sincos(v: anytype) [2]@TypeOf(v) {
 }
 
 pub fn asin(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     return switch (T) {
         f32 => asin32(v),
@@ -1626,6 +1681,7 @@ pub fn asin(v: anytype) @TypeOf(v) {
 }
 
 pub fn acos(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
     return switch (T) {
         f32 => acos32(v),
@@ -1635,6 +1691,7 @@ pub fn acos(v: anytype) @TypeOf(v) {
 }
 
 fn sincos32xN(v: anytype) [2]@TypeOf(v) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v);
 
     var x = modAngle(v);
@@ -1687,6 +1744,7 @@ test "zmath.sincos32xN" {
 }
 
 fn asin32xN(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     // 7-degree minimax approximation
     const T = @TypeOf(v);
 
@@ -1706,6 +1764,7 @@ fn asin32xN(v: anytype) @TypeOf(v) {
 }
 
 fn acos32xN(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     // 7-degree minimax approximation
     const T = @TypeOf(v);
 
@@ -1725,6 +1784,7 @@ fn acos32xN(v: anytype) @TypeOf(v) {
 }
 
 pub fn atan(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     // 17-degree minimax approximation
     const T = @TypeOf(v);
 
@@ -1789,6 +1849,7 @@ test "zmath.atan" {
 }
 
 pub fn atan2(vy: anytype, vx: anytype) @TypeOf(vx, vy) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(vx, vy);
     const Tu = @Vector(veclen(T), u32);
 
@@ -1911,6 +1972,7 @@ test "zmath.atan2" {
 //
 // ------------------------------------------------------------------------------
 pub inline fn dot2(v0: Vec, v1: Vec) F32x4 {
+    @setFloatMode(.optimized);
     var xmm0 = v0 * v1; // | x0*x1 | y0*y1 | -- | -- |
     const xmm1 = swizzle(xmm0, .y, .x, .x, .x); // | y0*y1 | -- | -- | -- |
     xmm0 = f32x4(xmm0[0] + xmm1[0], xmm0[1], xmm0[2], xmm0[3]); // | x0*x1 + y0*y1 | -- | -- | -- |
@@ -1924,6 +1986,7 @@ test "zmath.dot2" {
 }
 
 pub inline fn dot3(v0: Vec, v1: Vec) F32x4 {
+    @setFloatMode(.optimized);
     const dot = v0 * v1;
     return f32x4s(dot[0] + dot[1] + dot[2]);
 }
@@ -1935,6 +1998,7 @@ test "zmath.dot3" {
 }
 
 pub inline fn dot4(v0: Vec, v1: Vec) F32x4 {
+    @setFloatMode(.optimized);
     var xmm0 = v0 * v1; // | x0*x1 | y0*y1 | z0*z1 | w0*w1 |
     var xmm1 = swizzle(xmm0, .y, .x, .w, .x); // | y0*y1 | -- | w0*w1 | -- |
     xmm1 = xmm0 + xmm1; // | x0*x1 + y0*y1 | -- | z0*z1 + w0*w1 | -- |
@@ -1950,6 +2014,7 @@ test "zmath.dot4" {
 }
 
 pub inline fn cross3(v0: Vec, v1: Vec) Vec {
+    @setFloatMode(.optimized);
     var xmm0 = swizzle(v0, .y, .z, .x, .w);
     var xmm1 = swizzle(v1, .z, .x, .y, .w);
     var result = xmm0 * xmm1;
@@ -1980,22 +2045,28 @@ test "zmath.cross3" {
 }
 
 pub inline fn lengthSq2(v: Vec) F32x4 {
+    @setFloatMode(.optimized);
     return dot2(v, v);
 }
 pub inline fn lengthSq3(v: Vec) F32x4 {
+    @setFloatMode(.optimized);
     return dot3(v, v);
 }
 pub inline fn lengthSq4(v: Vec) F32x4 {
+    @setFloatMode(.optimized);
     return dot4(v, v);
 }
 
 pub inline fn length2(v: Vec) F32x4 {
+    @setFloatMode(.optimized);
     return sqrt(dot2(v, v));
 }
 pub inline fn length3(v: Vec) F32x4 {
+    @setFloatMode(.optimized);
     return sqrt(dot3(v, v));
 }
 pub inline fn length4(v: Vec) F32x4 {
+    @setFloatMode(.optimized);
     return sqrt(dot4(v, v));
 }
 test "zmath.length3" {
@@ -2018,12 +2089,15 @@ test "zmath.length3" {
 }
 
 pub inline fn normalize2(v: Vec) Vec {
+    @setFloatMode(.optimized);
     return v * splat(F32x4, 1.0) / sqrt(dot2(v, v));
 }
 pub inline fn normalize3(v: Vec) Vec {
+    @setFloatMode(.optimized);
     return v * splat(F32x4, 1.0) / sqrt(dot3(v, v));
 }
 pub inline fn normalize4(v: Vec) Vec {
+    @setFloatMode(.optimized);
     return v * splat(F32x4, 1.0) / sqrt(dot4(v, v));
 }
 test "zmath.normalize3" {
@@ -2054,6 +2128,7 @@ test "zmath.normalize4" {
 }
 
 fn vecMulMat(v: Vec, m: Mat) Vec {
+    @setFloatMode(.optimized);
     const vx = @shuffle(f32, v, undefined, [4]i32{ 0, 0, 0, 0 });
     const vy = @shuffle(f32, v, undefined, [4]i32{ 1, 1, 1, 1 });
     const vz = @shuffle(f32, v, undefined, [4]i32{ 2, 2, 2, 2 });
@@ -2061,6 +2136,7 @@ fn vecMulMat(v: Vec, m: Mat) Vec {
     return vx * m[0] + vy * m[1] + vz * m[2] + vw * m[3];
 }
 fn matMulVec(m: Mat, v: Vec) Vec {
+    @setFloatMode(.optimized);
     return .{ dot4(m[0], v)[0], dot4(m[1], v)[0], dot4(m[2], v)[0], dot4(m[3], v)[0] };
 }
 test "zmath.vecMulMat" {
@@ -2083,6 +2159,7 @@ test "zmath.vecMulMat" {
 //
 // ------------------------------------------------------------------------------
 pub fn identity() Mat {
+    @setFloatMode(.optimized);
     const static = struct {
         const identity = Mat{
             f32x4(1.0, 0.0, 0.0, 0.0),
@@ -2095,6 +2172,7 @@ pub fn identity() Mat {
 }
 
 pub fn matFromArr(arr: [16]f32) Mat {
+    @setFloatMode(.optimized);
     return Mat{
         f32x4(arr[0], arr[1], arr[2], arr[3]),
         f32x4(arr[4], arr[5], arr[6], arr[7]),
@@ -2104,6 +2182,7 @@ pub fn matFromArr(arr: [16]f32) Mat {
 }
 
 fn mulRetType(comptime Ta: type, comptime Tb: type) type {
+    @setFloatMode(.optimized);
     if (Ta == Mat and Tb == Mat) {
         return Mat;
     } else if ((Ta == f32 and Tb == Mat) or (Ta == Mat and Tb == f32)) {
@@ -2115,6 +2194,7 @@ fn mulRetType(comptime Ta: type, comptime Tb: type) type {
 }
 
 pub fn mul(a: anytype, b: anytype) mulRetType(@TypeOf(a), @TypeOf(b)) {
+    @setFloatMode(.optimized);
     const Ta = @TypeOf(a);
     const Tb = @TypeOf(b);
     if (Ta == Mat and Tb == Mat) {
@@ -2150,6 +2230,7 @@ test "zmath.mul" {
 }
 
 fn mulMat(m0: Mat, m1: Mat) Mat {
+    @setFloatMode(.optimized);
     var result: Mat = undefined;
     comptime var row: u32 = 0;
     inline while (row < 4) : (row += 1) {
@@ -2182,6 +2263,7 @@ test "zmath.matrix.mul" {
 }
 
 pub fn transpose(m: Mat) Mat {
+    @setFloatMode(.optimized);
     const temp1 = @shuffle(f32, m[0], m[1], [4]i32{ 0, 1, ~@as(i32, 0), ~@as(i32, 1) });
     const temp3 = @shuffle(f32, m[0], m[1], [4]i32{ 2, 3, ~@as(i32, 2), ~@as(i32, 3) });
     const temp2 = @shuffle(f32, m[2], m[3], [4]i32{ 0, 1, ~@as(i32, 0), ~@as(i32, 1) });
@@ -2208,6 +2290,7 @@ test "zmath.matrix.transpose" {
 }
 
 pub fn rotationX(angle: f32) Mat {
+    @setFloatMode(.optimized);
     const sc = sincos(angle);
     return .{
         f32x4(1.0, 0.0, 0.0, 0.0),
@@ -2218,6 +2301,7 @@ pub fn rotationX(angle: f32) Mat {
 }
 
 pub fn rotationY(angle: f32) Mat {
+    @setFloatMode(.optimized);
     const sc = sincos(angle);
     return .{
         f32x4(sc[1], 0.0, -sc[0], 0.0),
@@ -2228,6 +2312,7 @@ pub fn rotationY(angle: f32) Mat {
 }
 
 pub fn rotationZ(angle: f32) Mat {
+    @setFloatMode(.optimized);
     const sc = sincos(angle);
     return .{
         f32x4(sc[1], sc[0], 0.0, 0.0),
@@ -2238,6 +2323,7 @@ pub fn rotationZ(angle: f32) Mat {
 }
 
 pub fn translation(x: f32, y: f32, z: f32) Mat {
+    @setFloatMode(.optimized);
     return .{
         f32x4(1.0, 0.0, 0.0, 0.0),
         f32x4(0.0, 1.0, 0.0, 0.0),
@@ -2246,10 +2332,12 @@ pub fn translation(x: f32, y: f32, z: f32) Mat {
     };
 }
 pub fn translationV(v: Vec) Mat {
+    @setFloatMode(.optimized);
     return translation(v[0], v[1], v[2]);
 }
 
 pub fn scaling(x: f32, y: f32, z: f32) Mat {
+    @setFloatMode(.optimized);
     return .{
         f32x4(x, 0.0, 0.0, 0.0),
         f32x4(0.0, y, 0.0, 0.0),
@@ -2258,10 +2346,12 @@ pub fn scaling(x: f32, y: f32, z: f32) Mat {
     };
 }
 pub fn scalingV(v: Vec) Mat {
+    @setFloatMode(.optimized);
     return scaling(v[0], v[1], v[2]);
 }
 
 pub fn lookToLh(eyepos: Vec, eyedir: Vec, updir: Vec) Mat {
+    @setFloatMode(.optimized);
     const az = normalize3(eyedir);
     const ax = normalize3(cross3(updir, az));
     const ay = normalize3(cross3(az, ax));
@@ -2273,12 +2363,15 @@ pub fn lookToLh(eyepos: Vec, eyedir: Vec, updir: Vec) Mat {
     };
 }
 pub fn lookToRh(eyepos: Vec, eyedir: Vec, updir: Vec) Mat {
+    @setFloatMode(.optimized);
     return lookToLh(eyepos, -eyedir, updir);
 }
 pub fn lookAtLh(eyepos: Vec, focuspos: Vec, updir: Vec) Mat {
+    @setFloatMode(.optimized);
     return lookToLh(eyepos, focuspos - eyepos, updir);
 }
 pub fn lookAtRh(eyepos: Vec, focuspos: Vec, updir: Vec) Mat {
+    @setFloatMode(.optimized);
     return lookToLh(eyepos, eyepos - focuspos, updir);
 }
 test "zmath.matrix.lookToLh" {
@@ -2290,6 +2383,7 @@ test "zmath.matrix.lookToLh" {
 }
 
 pub fn perspectiveFovLh(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     const scfov = sincos(0.5 * fovy);
 
     assert(near > 0.0 and far > 0.0);
@@ -2308,6 +2402,7 @@ pub fn perspectiveFovLh(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
     };
 }
 pub fn perspectiveFovRh(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     const scfov = sincos(0.5 * fovy);
 
     assert(near > 0.0 and far > 0.0);
@@ -2328,6 +2423,7 @@ pub fn perspectiveFovRh(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
 
 // Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
 pub fn perspectiveFovLhGl(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     const scfov = sincos(0.5 * fovy);
 
     assert(near > 0.0 and far > 0.0);
@@ -2348,6 +2444,7 @@ pub fn perspectiveFovLhGl(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
 
 // Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
 pub fn perspectiveFovRhGl(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     const scfov = sincos(0.5 * fovy);
 
     assert(near > 0.0 and far > 0.0);
@@ -2367,6 +2464,7 @@ pub fn perspectiveFovRhGl(fovy: f32, aspect: f32, near: f32, far: f32) Mat {
 }
 
 pub fn orthographicLh(w: f32, h: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, w, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, h, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, far, near, 0.001));
@@ -2381,6 +2479,7 @@ pub fn orthographicLh(w: f32, h: f32, near: f32, far: f32) Mat {
 }
 
 pub fn orthographicRh(w: f32, h: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, w, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, h, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, far, near, 0.001));
@@ -2396,6 +2495,7 @@ pub fn orthographicRh(w: f32, h: f32, near: f32, far: f32) Mat {
 
 // Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
 pub fn orthographicLhGl(w: f32, h: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, w, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, h, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, far, near, 0.001));
@@ -2411,6 +2511,7 @@ pub fn orthographicLhGl(w: f32, h: f32, near: f32, far: f32) Mat {
 
 // Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
 pub fn orthographicRhGl(w: f32, h: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, w, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, h, 0.0, 0.001));
     assert(!math.approxEqAbs(f32, far, near, 0.001));
@@ -2425,6 +2526,7 @@ pub fn orthographicRhGl(w: f32, h: f32, near: f32, far: f32) Mat {
 }
 
 pub fn orthographicOffCenterLh(left: f32, right: f32, top: f32, bottom: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, far, near, 0.001));
 
     const r = 1 / (far - near);
@@ -2437,6 +2539,7 @@ pub fn orthographicOffCenterLh(left: f32, right: f32, top: f32, bottom: f32, nea
 }
 
 pub fn orthographicOffCenterRh(left: f32, right: f32, top: f32, bottom: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, far, near, 0.001));
 
     const r = 1 / (near - far);
@@ -2450,6 +2553,7 @@ pub fn orthographicOffCenterRh(left: f32, right: f32, top: f32, bottom: f32, nea
 
 // Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
 pub fn orthographicOffCenterLhGl(left: f32, right: f32, top: f32, bottom: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, far, near, 0.001));
 
     const r = far - near;
@@ -2463,6 +2567,7 @@ pub fn orthographicOffCenterLhGl(left: f32, right: f32, top: f32, bottom: f32, n
 
 // Produces Z values in [-1.0, 1.0] range (OpenGL defaults)
 pub fn orthographicOffCenterRhGl(left: f32, right: f32, top: f32, bottom: f32, near: f32, far: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!math.approxEqAbs(f32, far, near, 0.001));
 
     const r = near - far;
@@ -2475,6 +2580,7 @@ pub fn orthographicOffCenterRhGl(left: f32, right: f32, top: f32, bottom: f32, n
 }
 
 pub fn determinant(m: Mat) F32x4 {
+    @setFloatMode(.optimized);
     var v0 = swizzle(m[2], .y, .x, .x, .x);
     var v1 = swizzle(m[3], .z, .z, .y, .y);
     var v2 = swizzle(m[2], .y, .x, .x, .x);
@@ -2518,6 +2624,7 @@ test "zmath.matrix.determinant" {
 }
 
 pub fn inverse(a: anytype) @TypeOf(a) {
+    @setFloatMode(.optimized);
     const T = @TypeOf(a);
     return switch (T) {
         Mat => inverseMat(a),
@@ -2527,10 +2634,12 @@ pub fn inverse(a: anytype) @TypeOf(a) {
 }
 
 fn inverseMat(m: Mat) Mat {
+    @setFloatMode(.optimized);
     return inverseDet(m, null);
 }
 
 pub fn inverseDet(m: Mat, out_det: ?*F32x4) Mat {
+    @setFloatMode(.optimized);
     const mt = transpose(m);
     var v0: [4]F32x4 = undefined;
     var v1: [4]F32x4 = undefined;
@@ -2650,6 +2759,7 @@ test "zmath.matrix.inverse" {
 }
 
 pub fn matFromNormAxisAngle(axis: Vec, angle: f32) Mat {
+    @setFloatMode(.optimized);
     const sincos_angle = sincos(angle);
 
     const c2 = splat(F32x4, 1.0 - sincos_angle[1]);
@@ -2688,6 +2798,7 @@ pub fn matFromNormAxisAngle(axis: Vec, angle: f32) Mat {
     return m;
 }
 pub fn matFromAxisAngle(axis: Vec, angle: f32) Mat {
+    @setFloatMode(.optimized);
     assert(!all(axis == splat(F32x4, 0.0), 3));
     assert(!all(isInf(axis), 3));
     const normal = normalize3(axis);
@@ -2721,6 +2832,7 @@ test "zmath.matrix.matFromAxisAngle" {
 }
 
 pub fn matFromQuat(quat: Quat) Mat {
+    @setFloatMode(.optimized);
     const q0 = quat + quat;
     var q1 = quat * q0;
 
@@ -2774,17 +2886,21 @@ test "zmath.matrix.matFromQuat" {
 }
 
 pub fn matFromRollPitchYaw(pitch: f32, yaw: f32, roll: f32) Mat {
+    @setFloatMode(.optimized);
     return matFromRollPitchYawV(f32x4(pitch, yaw, roll, 0.0));
 }
 pub fn matFromRollPitchYawV(angles: Vec) Mat {
+    @setFloatMode(.optimized);
     return matFromQuat(quatFromRollPitchYawV(angles));
 }
 
 pub fn matToQuat(m: Mat) Quat {
+    @setFloatMode(.optimized);
     return quatFromMat(m);
 }
 
 pub inline fn loadMat(mem: []const f32) Mat {
+    @setFloatMode(.optimized);
     return .{
         load(mem[0..4], F32x4, 0),
         load(mem[4..8], F32x4, 0),
@@ -2808,6 +2924,7 @@ test "zmath.loadMat" {
 }
 
 pub inline fn storeMat(mem: []f32, m: Mat) void {
+    @setFloatMode(.optimized);
     store(mem[0..4], m[0], 0);
     store(mem[4..8], m[1], 0);
     store(mem[8..12], m[2], 0);
@@ -2815,6 +2932,7 @@ pub inline fn storeMat(mem: []f32, m: Mat) void {
 }
 
 pub inline fn loadMat43(mem: []const f32) Mat {
+    @setFloatMode(.optimized);
     return .{
         f32x4(mem[0], mem[1], mem[2], 0.0),
         f32x4(mem[3], mem[4], mem[5], 0.0),
@@ -2824,6 +2942,7 @@ pub inline fn loadMat43(mem: []const f32) Mat {
 }
 
 pub inline fn storeMat43(mem: []f32, m: Mat) void {
+    @setFloatMode(.optimized);
     store(mem[0..3], m[0], 3);
     store(mem[3..6], m[1], 3);
     store(mem[6..9], m[2], 3);
@@ -2831,6 +2950,7 @@ pub inline fn storeMat43(mem: []f32, m: Mat) void {
 }
 
 pub inline fn loadMat34(mem: []const f32) Mat {
+    @setFloatMode(.optimized);
     return .{
         load(mem[0..4], F32x4, 0),
         load(mem[4..8], F32x4, 0),
@@ -2840,24 +2960,28 @@ pub inline fn loadMat34(mem: []const f32) Mat {
 }
 
 pub inline fn storeMat34(mem: []f32, m: Mat) void {
+    @setFloatMode(.optimized);
     store(mem[0..4], m[0], 0);
     store(mem[4..8], m[1], 0);
     store(mem[8..12], m[2], 0);
 }
 
 pub inline fn matToArr(m: Mat) [16]f32 {
+    @setFloatMode(.optimized);
     var array: [16]f32 = undefined;
     storeMat(array[0..], m);
     return array;
 }
 
 pub inline fn matToArr43(m: Mat) [12]f32 {
+    @setFloatMode(.optimized);
     var array: [12]f32 = undefined;
     storeMat43(array[0..], m);
     return array;
 }
 
 pub inline fn matToArr34(m: Mat) [12]f32 {
+    @setFloatMode(.optimized);
     var array: [12]f32 = undefined;
     storeMat34(array[0..], m);
     return array;
@@ -2868,6 +2992,7 @@ pub inline fn matToArr34(m: Mat) [12]f32 {
 //
 // ------------------------------------------------------------------------------
 pub fn qmul(q0: Quat, q1: Quat) Quat {
+    @setFloatMode(.optimized);
     var result = swizzle(q1, .w, .w, .w, .w);
     var q1x = swizzle(q1, .x, .x, .x, .x);
     var q1y = swizzle(q1, .y, .y, .y, .y);
@@ -2893,10 +3018,12 @@ test "zmath.quaternion.mul" {
 }
 
 pub fn quatToMat(quat: Quat) Mat {
+    @setFloatMode(.optimized);
     return matFromQuat(quat);
 }
 
 pub fn quatToAxisAngle(quat: Quat, axis: *Vec, angle: *f32) void {
+    @setFloatMode(.optimized);
     axis.* = quat;
     angle.* = 2.0 * acos(quat[3]);
 }
@@ -2914,6 +3041,7 @@ test "zmath.quaternion.quatToAxisAngle" {
 }
 
 pub fn quatFromMat(m: Mat) Quat {
+    @setFloatMode(.optimized);
     const r0 = m[0];
     const r1 = m[1];
     const r2 = m[2];
@@ -2974,11 +3102,13 @@ test "zmath.quatFromMat" {
 }
 
 pub fn quatFromNormAxisAngle(axis: Vec, angle: f32) Quat {
+    @setFloatMode(.optimized);
     const n = f32x4(axis[0], axis[1], axis[2], 1.0);
     const sc = sincos(0.5 * angle);
     return n * f32x4(sc[0], sc[0], sc[0], sc[1]);
 }
 pub fn quatFromAxisAngle(axis: Vec, angle: f32) Quat {
+    @setFloatMode(.optimized);
     assert(!all(axis == splat(F32x4, 0.0), 3));
     assert(!all(isInf(axis), 3));
     const normal = normalize3(axis);
@@ -3008,14 +3138,17 @@ test "zmath.quaternion.quatFromNormAxisAngle" {
 }
 
 pub inline fn qidentity() Quat {
+    @setFloatMode(.optimized);
     return f32x4(@as(f32, 0.0), @as(f32, 0.0), @as(f32, 0.0), @as(f32, 1.0));
 }
 
 pub inline fn conjugate(quat: Quat) Quat {
+    @setFloatMode(.optimized);
     return quat * f32x4(-1.0, -1.0, -1.0, 1.0);
 }
 
 fn inverseQuat(quat: Quat) Quat {
+    @setFloatMode(.optimized);
     const l = lengthSq4(quat);
     const conj = conjugate(quat);
     return select(l <= splat(F32x4, math.floatEps(f32)), splat(F32x4, 0.0), conj / l);
@@ -3031,6 +3164,7 @@ test "zmath.quaternion.inverseQuat" {
 
 // Algorithm from: https://github.com/g-truc/glm/blob/master/glm/detail/type_quat.inl
 pub fn rotate(q: Quat, v: Vec) Vec {
+    @setFloatMode(.optimized);
     const w = splat(F32x4, q[3]);
     const axis = f32x4(q[0], q[1], q[2], 0.0);
     const uv = cross3(axis, v);
@@ -3048,9 +3182,11 @@ test "zmath.quaternion.rotate" {
 }
 
 pub fn slerp(q0: Quat, q1: Quat, t: f32) Quat {
+    @setFloatMode(.optimized);
     return slerpV(q0, q1, splat(F32x4, t));
 }
 pub fn slerpV(q0: Quat, q1: Quat, t: F32x4) Quat {
+    @setFloatMode(.optimized);
     var cos_omega = dot4(q0, q1);
     const sign = select(cos_omega < splat(F32x4, 0.0), splat(F32x4, -1.0), splat(F32x4, 1.0));
 
@@ -3081,6 +3217,7 @@ test "zmath.quaternion.slerp" {
 // Converts q back to euler angles, assuming a YXZ rotation order.
 // See: http://www.euclideanspace.com/maths/geometry/rotations/conversions/quaternionToEuler
 pub fn quatToRollPitchYaw(q: Quat) [3]f32 {
+    @setFloatMode(.optimized);
     var angles: [3]f32 = undefined;
 
     const p = swizzle(q, .w, .y, .x, .z);
@@ -3143,9 +3280,11 @@ test "zmath.quaternion.quatToRollPitchYaw" {
 }
 
 pub fn quatFromRollPitchYaw(pitch: f32, yaw: f32, roll: f32) Quat {
+    @setFloatMode(.optimized);
     return quatFromRollPitchYawV(f32x4(pitch, yaw, roll, 0.0));
 }
 pub fn quatFromRollPitchYawV(angles: Vec) Quat { // | pitch | yaw | roll | 0 |
+    @setFloatMode(.optimized);
     const sc = sincos(splat(Vec, 0.5) * angles);
     const p0 = @shuffle(f32, sc[1], sc[0], [4]i32{ ~@as(i32, 0), 0, 0, 0 });
     const p1 = @shuffle(f32, sc[0], sc[1], [4]i32{ ~@as(i32, 0), 0, 0, 0 });
@@ -3184,6 +3323,7 @@ test "zmath.quaternion.quatFromRollPitchYawV" {
 //
 // ------------------------------------------------------------------------------
 pub fn adjustSaturation(color: F32x4, saturation: f32) F32x4 {
+    @setFloatMode(.optimized);
     const luminance = dot3(f32x4(0.2125, 0.7154, 0.0721, 0.0), color);
     var result = mulAdd(color - luminance, f32x4s(saturation), luminance);
     result[3] = color[3];
@@ -3191,12 +3331,14 @@ pub fn adjustSaturation(color: F32x4, saturation: f32) F32x4 {
 }
 
 pub fn adjustContrast(color: F32x4, contrast: f32) F32x4 {
+    @setFloatMode(.optimized);
     var result = mulAdd(color - f32x4s(0.5), f32x4s(contrast), f32x4s(0.5));
     result[3] = color[3];
     return result;
 }
 
 pub fn rgbToHsl(rgb: F32x4) F32x4 {
+    @setFloatMode(.optimized);
     const r = swizzle(rgb, .x, .x, .x, .x);
     const g = swizzle(rgb, .y, .y, .y, .y);
     const b = swizzle(rgb, .z, .z, .z, .z);
@@ -3250,6 +3392,7 @@ test "zmath.color.rgbToHsl" {
 }
 
 fn hueToClr(p: F32x4, q: F32x4, h: F32x4) F32x4 {
+    @setFloatMode(.optimized);
     var t = h;
 
     if (all(t < f32x4s(0.0), 3))
@@ -3271,6 +3414,7 @@ fn hueToClr(p: F32x4, q: F32x4, h: F32x4) F32x4 {
 }
 
 pub fn hslToRgb(hsl: F32x4) F32x4 {
+    @setFloatMode(.optimized);
     const s = swizzle(hsl, .y, .y, .y, .y);
     const l = swizzle(hsl, .z, .z, .z, .z);
 
@@ -3327,6 +3471,7 @@ test "zmath.color.hslToRgb" {
 }
 
 pub fn rgbToHsv(rgb: F32x4) F32x4 {
+    @setFloatMode(.optimized);
     const r = swizzle(rgb, .x, .x, .x, .x);
     const g = swizzle(rgb, .y, .y, .y, .y);
     const b = swizzle(rgb, .z, .z, .z, .z);
@@ -3370,6 +3515,7 @@ test "zmath.color.rgbToHsv" {
 }
 
 pub fn hsvToRgb(hsv: F32x4) F32x4 {
+    @setFloatMode(.optimized);
     const h = swizzle(hsv, .x, .x, .x, .x);
     const s = swizzle(hsv, .y, .y, .y, .y);
     const v = swizzle(hsv, .z, .z, .z, .z);
@@ -3445,6 +3591,7 @@ test "zmath.color.hsvToRgb" {
 }
 
 pub fn rgbToSrgb(rgb: F32x4) F32x4 {
+    @setFloatMode(.optimized);
     const static = struct {
         const cutoff = f32x4(0.0031308, 0.0031308, 0.0031308, 1.0);
         const linear = f32x4(12.92, 12.92, 12.92, 1.0);
@@ -3469,6 +3616,7 @@ test "zmath.color.rgbToSrgb" {
 }
 
 pub fn srgbToRgb(srgb: F32x4) F32x4 {
+    @setFloatMode(.optimized);
     const static = struct {
         const cutoff = f32x4(0.04045, 0.04045, 0.04045, 1.0);
         const rlinear = f32x4(1.0 / 12.92, 1.0 / 12.92, 1.0 / 12.92, 1.0);
@@ -3503,6 +3651,7 @@ test "zmath.color.srgbToRgb" {
 //
 // ------------------------------------------------------------------------------
 pub fn linePointDistance(linept0: Vec, linept1: Vec, pt: Vec) F32x4 {
+    @setFloatMode(.optimized);
     const ptvec = pt - linept0;
     const linevec = linept1 - linept0;
     const scale = dot3(ptvec, linevec) / lengthSq3(linevec);
@@ -3519,6 +3668,7 @@ test "zmath.linePointDistance" {
 }
 
 fn sin32(v: f32) f32 {
+    @setFloatMode(.optimized);
     var y = v - math.tau * @round(v * 1.0 / math.tau);
 
     if (y > 0.5 * math.pi) {
@@ -3536,6 +3686,7 @@ fn sin32(v: f32) f32 {
     return y * mulAdd(sinv, y2, 1.0);
 }
 fn cos32(v: f32) f32 {
+    @setFloatMode(.optimized);
     var y = v - math.tau * @round(v * 1.0 / math.tau);
 
     const sign = blk: {
@@ -3559,6 +3710,7 @@ fn cos32(v: f32) f32 {
     return sign * mulAdd(cosv, y2, 1.0);
 }
 fn sincos32(v: f32) [2]f32 {
+    @setFloatMode(.optimized);
     var y = v - math.tau * @round(v * 1.0 / math.tau);
 
     const sign = blk: {
@@ -3624,6 +3776,7 @@ test "zmath.sincos32" {
 }
 
 fn asin32(v: f32) f32 {
+    @setFloatMode(.optimized);
     const x = @abs(v);
     var omx = 1.0 - x;
     if (omx < 0.0) {
@@ -3678,6 +3831,7 @@ test "zmath.asin32" {
 }
 
 fn acos32(v: f32) f32 {
+    @setFloatMode(.optimized);
     const x = @abs(v);
     var omx = 1.0 - x;
     if (omx < 0.0) {
@@ -3732,6 +3886,7 @@ test "zmath.acos32" {
 }
 
 pub fn modAngle32(in_angle: f32) f32 {
+    @setFloatMode(.optimized);
     const angle = in_angle + math.pi;
     var temp: f32 = @abs(angle);
     temp = temp - (2.0 * math.pi * @as(f32, @floatFromInt(@as(i32, @intFromFloat(temp / math.pi)))));
@@ -3743,6 +3898,7 @@ pub fn modAngle32(in_angle: f32) f32 {
 }
 
 pub fn cmulSoa(re0: anytype, im0: anytype, re1: anytype, im1: anytype) [2]@TypeOf(re0, im0, re1, im1) {
+    @setFloatMode(.optimized);
     const re0_re1 = re0 * re1;
     const re0_im1 = re0 * im1;
     return .{
@@ -3756,6 +3912,7 @@ pub fn cmulSoa(re0: anytype, im0: anytype, re1: anytype, im1: anytype) [2]@TypeO
 //
 // ------------------------------------------------------------------------------
 fn fftButterflyDit4_1(re0: *F32x4, im0: *F32x4) void {
+    @setFloatMode(.optimized);
     const re0l = swizzle(re0.*, .x, .x, .y, .y);
     const re0h = swizzle(re0.*, .z, .z, .w, .w);
 
@@ -3851,6 +4008,7 @@ fn fftButterflyDit4_4(
 }
 
 fn fft4(re: []F32x4, im: []F32x4, count: u32) void {
+    @setFloatMode(.optimized);
     assert(std.math.isPowerOfTwo(count));
     assert(re.len >= count);
     assert(im.len >= count);
@@ -3876,6 +4034,7 @@ test "zmath.fft4" {
 }
 
 fn fft8(re: []F32x4, im: []F32x4, count: u32) void {
+    @setFloatMode(.optimized);
     assert(std.math.isPowerOfTwo(count));
     assert(re.len >= 2 * count);
     assert(im.len >= 2 * count);
@@ -3932,6 +4091,7 @@ test "zmath.fft8" {
 }
 
 fn fft16(re: []F32x4, im: []F32x4, count: u32) void {
+    @setFloatMode(.optimized);
     assert(std.math.isPowerOfTwo(count));
     assert(re.len >= 4 * count);
     assert(im.len >= 4 * count);
@@ -3996,6 +4156,7 @@ test "zmath.fft16" {
 }
 
 fn fftN(re: []F32x4, im: []F32x4, unity_table: []const F32x4, length: u32, count: u32) void {
+    @setFloatMode(.optimized);
     assert(length > 16);
     assert(std.math.isPowerOfTwo(length));
     assert(std.math.isPowerOfTwo(count));
@@ -4188,6 +4349,7 @@ test "zmath.fftN" {
 }
 
 fn fftUnswizzle(input: []const F32x4, output: []F32x4) void {
+    @setFloatMode(.optimized);
     assert(std.math.isPowerOfTwo(input.len));
     assert(input.len == output.len);
     assert(input.ptr != output.ptr);
@@ -4259,6 +4421,7 @@ fn fftUnswizzle(input: []const F32x4, output: []F32x4) void {
 }
 
 pub fn fftInitUnityTable(out_unity_table: []F32x4) void {
+    @setFloatMode(.optimized);
     assert(std.math.isPowerOfTwo(out_unity_table.len));
     assert(out_unity_table.len >= 32 and out_unity_table.len <= 512);
 
@@ -4305,6 +4468,7 @@ pub fn fftInitUnityTable(out_unity_table: []F32x4) void {
 }
 
 pub fn fft(re: []F32x4, im: []F32x4, unity_table: []const F32x4) void {
+    @setFloatMode(.optimized);
     const length = @as(u32, @intCast(re.len * 4));
     assert(std.math.isPowerOfTwo(length));
     assert(length >= 4 and length <= 512);
@@ -4334,6 +4498,7 @@ pub fn fft(re: []F32x4, im: []F32x4, unity_table: []const F32x4) void {
 }
 
 pub fn ifft(re: []F32x4, im: []const F32x4, unity_table: []const F32x4) void {
+    @setFloatMode(.optimized);
     const length = @as(u32, @intCast(re.len * 4));
     assert(std.math.isPowerOfTwo(length));
     assert(length >= 4 and length <= 512);
@@ -4455,16 +4620,20 @@ const f32x4_mask3: F32x4 = F32x4{
 };
 
 inline fn splatNegativeZero(comptime T: type) T {
+    @setFloatMode(.optimized);
     return @splat(@as(f32, @bitCast(@as(u32, 0x8000_0000))));
 }
 inline fn splatNoFraction(comptime T: type) T {
+    @setFloatMode(.optimized);
     return @splat(@as(f32, 8_388_608.0));
 }
 inline fn splatAbsMask(comptime T: type) T {
+    @setFloatMode(.optimized);
     return @splat(@as(f32, @bitCast(@as(u32, 0x7fff_ffff))));
 }
 
 fn floatToIntAndBack(v: anytype) @TypeOf(v) {
+    @setFloatMode(.optimized);
     // This routine won't handle nan, inf and numbers greater than 8_388_608.0 (will generate undefined values).
     @setRuntimeSafety(false);
 
@@ -4503,6 +4672,7 @@ test "zmath.floatToIntAndBack" {
 }
 
 pub fn approxEqAbs(v0: anytype, v1: anytype, eps: f32) bool {
+    @setFloatMode(.optimized);
     const T = @TypeOf(v0, v1);
     comptime var i: comptime_int = 0;
     inline while (i < veclen(T)) : (i += 1) {
