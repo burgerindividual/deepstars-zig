@@ -47,6 +47,7 @@ pub fn main() !void {
             .client_api = .opengl_es_api,
             .decorated = false,
             .transparent_framebuffer = false,
+            .stencil_bits = 0,
             // .srgb_capable = true,
             // what happens if the platform doesn't support KHR_no_error?
             // .context_no_error = !std.debug.runtime_safety,
@@ -71,7 +72,7 @@ pub fn main() !void {
     window.setInputModeCursor(.hidden);
 
     // Enable VSync to avoid drawing more often than necessary.
-    glfw.swapInterval(0);
+    glfw.swapInterval(1);
 
     // Initialize the OpenGL procedure table.
     if (!gl_procs.init(glfw.getProcAddress)) {
@@ -519,26 +520,44 @@ pub fn main() !void {
     );
 
     // Set up shaders
-    const terrain_tex_frag_shader_text = @embedFile("shaders/terrain_tex.frag");
-    const terrain_tex_frag_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
-    defer gl.DeleteShader(terrain_tex_frag_shader);
+    const terrain_tex_depth_frag_shader_text = @embedFile("shaders/terrain_tex_depth.frag");
+    const terrain_tex_depth_frag_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
+    defer gl.DeleteShader(terrain_tex_depth_frag_shader);
     gl.ShaderSource(
-        terrain_tex_frag_shader,
+        terrain_tex_depth_frag_shader,
         1,
-        &.{terrain_tex_frag_shader_text},
-        &.{terrain_tex_frag_shader_text.len},
+        &.{terrain_tex_depth_frag_shader_text},
+        &.{terrain_tex_depth_frag_shader_text.len},
     );
-    gl.CompileShader(terrain_tex_frag_shader);
+    gl.CompileShader(terrain_tex_depth_frag_shader);
 
-    const terrain_tex_program = gl.CreateProgram();
-    defer gl.DeleteProgram(terrain_tex_program);
-    gl.AttachShader(terrain_tex_program, framebuffer_vert_shader);
-    gl.AttachShader(terrain_tex_program, terrain_tex_frag_shader);
-    gl.LinkProgram(terrain_tex_program);
-    gl.UseProgram(terrain_tex_program);
+    const terrain_tex_depth_program = gl.CreateProgram();
+    defer gl.DeleteProgram(terrain_tex_depth_program);
+    gl.AttachShader(terrain_tex_depth_program, framebuffer_vert_shader);
+    gl.AttachShader(terrain_tex_depth_program, terrain_tex_depth_frag_shader);
+    gl.LinkProgram(terrain_tex_depth_program);
+    gl.UseProgram(terrain_tex_depth_program);
+
+    const terrain_tex_color_frag_shader_text = @embedFile("shaders/terrain_tex_color.frag");
+    const terrain_tex_color_frag_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
+    defer gl.DeleteShader(terrain_tex_color_frag_shader);
+    gl.ShaderSource(
+        terrain_tex_color_frag_shader,
+        1,
+        &.{terrain_tex_color_frag_shader_text},
+        &.{terrain_tex_color_frag_shader_text.len},
+    );
+    gl.CompileShader(terrain_tex_color_frag_shader);
+
+    const terrain_tex_color_program = gl.CreateProgram();
+    defer gl.DeleteProgram(terrain_tex_color_program);
+    gl.AttachShader(terrain_tex_color_program, framebuffer_vert_shader);
+    gl.AttachShader(terrain_tex_color_program, terrain_tex_color_frag_shader);
+    gl.LinkProgram(terrain_tex_color_program);
+    gl.UseProgram(terrain_tex_color_program);
 
     // Set up vertex attributes
-    gl.BindAttribLocation(terrain_tex_program, terrain_tex_pos_attrib, "position");
+    gl.BindAttribLocation(terrain_tex_color_program, terrain_tex_pos_attrib, "position");
     // tightly packed vec2 array
     gl.VertexAttribPointer(
         terrain_tex_pos_attrib,
@@ -579,7 +598,8 @@ pub fn main() !void {
             const smear_time_remaining = smear_end_time - ms_time;
             stars_smear_opacity = @min(@as(f32, @floatFromInt(smear_time_remaining)) / 5000.0, 1.0);
         } else if (ms_time >= smear_end_time) {
-            smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 80000);
+            // smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 80000);
+            smear_start_time = ms_time + 2000;
             smear_end_time = smear_start_time + rand.intRangeAtMost(u32, 20000, 50000);
             stars_fb_needs_clear = true;
         }
@@ -656,13 +676,10 @@ pub fn main() !void {
         // Render terrain texture
         gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
         gl.DepthMask(gl.TRUE);
-        // Don't depth test with it's own depth values
-        gl.DepthFunc(gl.ALWAYS);
-        gl.BlendEquation(gl.FUNC_ADD);
         gl.ClearColor(0.0, 0.0, 0.0, 1.0);
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        gl.UseProgram(terrain_tex_program);
+        gl.UseProgram(terrain_tex_depth_program);
         gl.BindVertexArrayOES(terrain_tex_vao);
         gl.BindTexture(gl.TEXTURE_2D, terrain_fb_texture);
         gl.DrawElements(gl.TRIANGLES, terrain_tex_indices.len, gl.UNSIGNED_SHORT, 0);
@@ -679,7 +696,6 @@ pub fn main() !void {
             gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
         }
 
-        gl.DepthFunc(gl.LESS);
         gl.DepthMask(gl.FALSE);
         gl.UseProgram(stars_program);
         gl.BindVertexArrayOES(stars_vao);
@@ -709,10 +725,10 @@ pub fn main() !void {
         }
 
         gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
-        gl.BlendEquation(gl.FUNC_ADD);
 
         // when the smears are translucent or gone, render stars to default framebuffer
         if (stars_smear_opacity < 1.0) {
+            gl.BlendEquation(gl.FUNC_ADD);
             gl.DrawArrays(gl.POINTS, 0, star_count);
         }
 
@@ -727,6 +743,18 @@ pub fn main() !void {
 
             gl.DrawArrays(gl.TRIANGLES, 0, framebuffer_vertices.len);
         }
+
+        // we're only writing color in this pass
+        gl.DepthMask(gl.FALSE);
+        // Don't depth test with it's own depth values from the depth pass
+        gl.DepthFunc(gl.ALWAYS);
+        gl.BlendEquation(gl.FUNC_ADD);
+        gl.UseProgram(terrain_tex_color_program);
+        gl.BindVertexArrayOES(terrain_tex_vao);
+        gl.BindTexture(gl.TEXTURE_2D, terrain_fb_texture);
+        gl.DrawElements(gl.TRIANGLES, terrain_tex_indices.len, gl.UNSIGNED_SHORT, 0);
+
+        gl.DepthFunc(gl.LESS);
 
         window.swapBuffers();
     }
