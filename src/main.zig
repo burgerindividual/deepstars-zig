@@ -15,8 +15,8 @@ pub fn main() !void {
     glfw.setErrorCallback(logGLFWError);
 
     // todo: switch to wayland when done with renderdoc
-    const preferred_platform: glfw.PlatformType = if (glfw.platformSupported(.wayland)) .wayland else .any;
-    if (!glfw.init(.{ .platform = preferred_platform })) {
+    // const preferred_platform: glfw.PlatformType = if (glfw.platformSupported(.wayland)) .wayland else .any;
+    if (!glfw.init(.{ .platform = .x11 })) {
         glfw_log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
         return error.GLFWInitFailed;
     }
@@ -71,7 +71,7 @@ pub fn main() !void {
     window.setInputModeCursor(.hidden);
 
     // Enable VSync to avoid drawing more often than necessary.
-    glfw.swapInterval(1);
+    glfw.swapInterval(0);
 
     // Initialize the OpenGL procedure table.
     if (!gl_procs.init(glfw.getProcAddress)) {
@@ -100,11 +100,18 @@ pub fn main() !void {
         gl.DebugMessageInsertKHR(gl.DEBUG_SOURCE_APPLICATION_KHR, gl.DEBUG_TYPE_OTHER_KHR, 0, gl.DEBUG_SEVERITY_NOTIFICATION_KHR, message.len, message);
     }
 
+    // // init renderdoc
+    // var renderdoc_lib = try std.DynLib.open("/usr/lib/librenderdoc.so");
+    // const renderdoc_init_fn = renderdoc_lib.lookup(*const fn () void, "dlopen");
+    // renderdoc_init_fn.?();
+
+    const initial_fbo_bounds = window.getFramebufferSize();
+
     var random = std.Random.Xoroshiro128.init(@bitCast(std.time.milliTimestamp()));
     const rand = random.random();
 
     // uncomment this to generate stars-preloaded.bin
-    // const loaded_stars = genStars();
+    // const loaded_stars = genStarGeometry();
     // const file = std.fs.cwd().createFile(
     //     "stars-preloaded.bin",
     //     .{},
@@ -153,24 +160,84 @@ pub fn main() !void {
         10.0,
     );
 
-    // Set blending mode
-    gl.BlendFuncSeparate(
-        gl.SRC_ALPHA,
-        gl.ONE_MINUS_SRC_ALPHA,
-        gl.ONE,
-        gl.ONE_MINUS_SRC_ALPHA,
-    );
+    // Enable blending
+    gl.Enable(gl.BLEND);
 
     // Enable depth test (good for stars behind mountains)
     gl.Enable(gl.DEPTH_TEST);
 
     // Create vertex arrays for the stars and terrain pipelines
-    var vertex_arrays: [3]gl.uint = undefined;
+    var vertex_arrays: [4]gl.uint = undefined;
     gl.GenVertexArraysOES(vertex_arrays.len, &vertex_arrays);
     defer gl.DeleteVertexArraysOES(vertex_arrays.len, &vertex_arrays);
     const terrain_vao = vertex_arrays[0];
     const stars_vao = vertex_arrays[1];
     const framebuffer_vao = vertex_arrays[2];
+    const terrain_tex_vao = vertex_arrays[3];
+
+    ////
+    //// FRAMEBUFFER DRAW SETUP
+    ////
+
+    // Create and fill the vertex and index buffers
+    gl.BindVertexArrayOES(framebuffer_vao);
+
+    var framebuffer_vertex_buffer: gl.uint = undefined;
+    gl.GenBuffers(1, @as(*[1]gl.uint, &framebuffer_vertex_buffer));
+    defer gl.DeleteBuffers(1, @as(*[1]gl.uint, &framebuffer_vertex_buffer));
+
+    gl.BindBuffer(gl.ARRAY_BUFFER, framebuffer_vertex_buffer);
+    gl.BufferData(
+        gl.ARRAY_BUFFER,
+        @sizeOf(@TypeOf(framebuffer_vertices)),
+        &framebuffer_vertices,
+        gl.STATIC_DRAW,
+    );
+
+    // Set up shaders
+    const framebuffer_vert_shader_text = @embedFile("shaders/framebuffer.vert");
+    const framebuffer_vert_shader = gl.CreateShader(gl.VERTEX_SHADER);
+    defer gl.DeleteShader(framebuffer_vert_shader);
+    gl.ShaderSource(
+        framebuffer_vert_shader,
+        1,
+        &.{framebuffer_vert_shader_text},
+        &.{framebuffer_vert_shader_text.len},
+    );
+    gl.CompileShader(framebuffer_vert_shader);
+
+    const framebuffer_frag_shader_text = @embedFile("shaders/framebuffer.frag");
+    const framebuffer_frag_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
+    defer gl.DeleteShader(framebuffer_frag_shader);
+    gl.ShaderSource(
+        framebuffer_frag_shader,
+        1,
+        &.{framebuffer_frag_shader_text},
+        &.{framebuffer_frag_shader_text.len},
+    );
+    gl.CompileShader(framebuffer_frag_shader);
+
+    const framebuffer_program = gl.CreateProgram();
+    defer gl.DeleteProgram(framebuffer_program);
+    gl.AttachShader(framebuffer_program, framebuffer_vert_shader);
+    gl.AttachShader(framebuffer_program, framebuffer_frag_shader);
+    gl.LinkProgram(framebuffer_program);
+    gl.UseProgram(framebuffer_program);
+
+    // Set up vertex attributes
+    gl.BindAttribLocation(framebuffer_program, framebuffer_pos_attrib, "position");
+    // tightly packed vec2 array
+    gl.VertexAttribPointer(
+        framebuffer_pos_attrib,
+        2,
+        gl.FLOAT,
+        gl.FALSE,
+        0,
+        0,
+    );
+    gl.EnableVertexAttribArray(framebuffer_pos_attrib);
+
+    const opacity_uniform = gl.GetUniformLocation(framebuffer_program, "opacity");
 
     ////
     //// STARS SETUP
@@ -186,8 +253,8 @@ pub fn main() !void {
     gl.BindBuffer(gl.ARRAY_BUFFER, stars_vertex_buffer);
     gl.BufferData(
         gl.ARRAY_BUFFER,
-        @sizeOf(@TypeOf(stars.vertices)),
-        &stars.vertices,
+        @sizeOf(@TypeOf(stars_geometry.vertices)),
+        &stars_geometry.vertices,
         gl.STATIC_DRAW,
     );
 
@@ -261,14 +328,49 @@ pub fn main() !void {
     const global_scale_uniform = gl.GetUniformLocation(stars_program, "global_scale");
     const mvp_matrix_uniform = gl.GetUniformLocation(stars_program, "mvp_matrix");
 
+    // Create stars framebuffer and texture
+    var stars_framebuffer: gl.uint = undefined;
+    gl.GenFramebuffers(1, @as(*[1]gl.uint, &stars_framebuffer));
+    defer gl.DeleteFramebuffers(1, @as(*[1]gl.uint, &stars_framebuffer));
+
+    var stars_fb_texture: gl.uint = undefined;
+    gl.GenTextures(1, @as(*[1]gl.uint, &stars_fb_texture));
+    defer gl.DeleteTextures(1, @as(*[1]gl.uint, &stars_fb_texture));
+
+    gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
+    gl.BindTexture(gl.TEXTURE_2D, stars_fb_texture);
+    gl.TexImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        @intCast(initial_fbo_bounds.width),
+        @intCast(initial_fbo_bounds.height),
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null,
+    );
+
+    // the default parameters rely on mipmaps, which we don't want
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+
+    gl.FramebufferTexture2D(
+        gl.FRAMEBUFFER,
+        gl.COLOR_ATTACHMENT0,
+        gl.TEXTURE_2D,
+        stars_fb_texture,
+        0,
+    );
+
     ////
     //// TERRAIN SETUP
     ////
 
     // Build the terrain
-    const terrain = genTerrain(rand);
+    const terrain_geometry = genTerrainGeometry(rand);
 
-    // Create and fill the terrain vertex and index buffers
+    // Create and fill the vertex and index buffers
     gl.BindVertexArrayOES(terrain_vao);
 
     var terrain_buffers: [2]gl.uint = undefined;
@@ -280,21 +382,21 @@ pub fn main() !void {
     gl.BindBuffer(gl.ARRAY_BUFFER, terrain_vertex_buffer);
     gl.BufferData(
         gl.ARRAY_BUFFER,
-        @sizeOf(@TypeOf(terrain.vertices)),
-        &terrain.vertices,
+        @sizeOf(@TypeOf(terrain_geometry.vertices)),
+        &terrain_geometry.vertices,
         gl.STATIC_DRAW,
     );
 
     gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrain_index_buffer);
     gl.BufferData(
         gl.ELEMENT_ARRAY_BUFFER,
-        @sizeOf(@TypeOf(terrain.indices)),
-        &terrain.indices,
+        @sizeOf(@TypeOf(terrain_geometry.indices)),
+        &terrain_geometry.indices,
         gl.STATIC_DRAW,
     );
 
     // Set up shaders
-    const terrain_vert_shader_text = @embedFile("shaders/terrain.vert");
+    const terrain_vert_shader_text = @embedFile("shaders/terrain_ss.vert");
     const terrain_vert_shader = gl.CreateShader(gl.VERTEX_SHADER);
     defer gl.DeleteShader(terrain_vert_shader);
     gl.ShaderSource(
@@ -305,7 +407,7 @@ pub fn main() !void {
     );
     gl.CompileShader(terrain_vert_shader);
 
-    const terrain_frag_shader_text = @embedFile("shaders/terrain.frag");
+    const terrain_frag_shader_text = @embedFile("shaders/terrain_ss.frag");
     const terrain_frag_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
     defer gl.DeleteShader(terrain_frag_shader);
     gl.ShaderSource(
@@ -336,86 +438,27 @@ pub fn main() !void {
     );
     gl.EnableVertexAttribArray(terrain_pos_attrib);
 
-    ////
-    //// FRAMEBUFFER SETUP
-    ////
+    // Create terrain framebuffer and texture
+    var terrain_framebuffer: gl.uint = undefined;
+    gl.GenFramebuffers(1, @as(*[1]gl.uint, &terrain_framebuffer));
+    defer gl.DeleteFramebuffers(1, @as(*[1]gl.uint, &terrain_framebuffer));
 
-    // Create and fill the terrain vertex and index buffers
-    gl.BindVertexArrayOES(framebuffer_vao);
+    var terrain_fb_texture: gl.uint = undefined;
+    gl.GenTextures(1, @as(*[1]gl.uint, &terrain_fb_texture));
+    defer gl.DeleteTextures(1, @as(*[1]gl.uint, &terrain_fb_texture));
 
-    var framebuffer_vertex_buffer: gl.uint = undefined;
-    gl.GenBuffers(1, @as(*[1]gl.uint, &framebuffer_vertex_buffer));
-    defer gl.DeleteBuffers(1, @as(*[1]gl.uint, &framebuffer_vertex_buffer));
-
-    gl.BindBuffer(gl.ARRAY_BUFFER, framebuffer_vertex_buffer);
-    gl.BufferData(
-        gl.ARRAY_BUFFER,
-        @sizeOf(@TypeOf(framebuffer_vertices)),
-        &framebuffer_vertices,
-        gl.STATIC_DRAW,
-    );
-
-    // Set up shaders
-    const framebuffer_vert_shader_text = @embedFile("shaders/framebuffer.vert");
-    const framebuffer_vert_shader = gl.CreateShader(gl.VERTEX_SHADER);
-    defer gl.DeleteShader(framebuffer_vert_shader);
-    gl.ShaderSource(
-        framebuffer_vert_shader,
-        1,
-        &.{framebuffer_vert_shader_text},
-        &.{framebuffer_vert_shader_text.len},
-    );
-    gl.CompileShader(framebuffer_vert_shader);
-
-    const framebuffer_frag_shader_text = @embedFile("shaders/framebuffer.frag");
-    const framebuffer_frag_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
-    defer gl.DeleteShader(framebuffer_frag_shader);
-    gl.ShaderSource(
-        framebuffer_frag_shader,
-        1,
-        &.{framebuffer_frag_shader_text},
-        &.{framebuffer_frag_shader_text.len},
-    );
-    gl.CompileShader(framebuffer_frag_shader);
-
-    const framebuffer_program = gl.CreateProgram();
-    defer gl.DeleteProgram(framebuffer_program);
-    gl.AttachShader(framebuffer_program, framebuffer_vert_shader);
-    gl.AttachShader(framebuffer_program, framebuffer_frag_shader);
-    gl.LinkProgram(framebuffer_program);
-    gl.UseProgram(framebuffer_program);
-
-    // Set up vertex attributes
-    gl.BindAttribLocation(framebuffer_program, framebuffer_pos_attrib, "position");
-    // tightly packed vec2 array
-    gl.VertexAttribPointer(
-        framebuffer_pos_attrib,
-        2,
-        gl.FLOAT,
-        gl.FALSE,
+    gl.BindFramebuffer(gl.FRAMEBUFFER, terrain_framebuffer);
+    gl.BindTexture(gl.TEXTURE_2D, terrain_fb_texture);
+    gl.TexImage2D(
+        gl.TEXTURE_2D,
         0,
+        gl.RGBA,
+        @intCast(initial_fbo_bounds.width),
+        @intCast(initial_fbo_bounds.height),
         0,
-    );
-    gl.EnableVertexAttribArray(framebuffer_pos_attrib);
-
-    // Set up opacity uniform
-    const opacity_uniform = gl.GetUniformLocation(framebuffer_program, "opacity");
-
-    // Create stars framebuffer and texture
-    var stars_framebuffer: gl.uint = undefined;
-    gl.GenFramebuffers(1, @as(*[1]gl.uint, &stars_framebuffer));
-    defer gl.DeleteFramebuffers(1, @as(*[1]gl.uint, &stars_framebuffer));
-
-    var stars_fb_texture: gl.uint = undefined;
-    gl.GenTextures(1, @as(*[1]gl.uint, &stars_fb_texture));
-    defer gl.DeleteTextures(1, @as(*[1]gl.uint, &stars_fb_texture));
-
-    const fbo_bounds = window.getFramebufferSize();
-    gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
-    setupTextureTarget(
-        @intCast(fbo_bounds.width),
-        @intCast(fbo_bounds.height),
-        stars_fb_texture,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null,
     );
 
     // the default parameters rely on mipmaps, which we don't want
@@ -426,17 +469,102 @@ pub fn main() !void {
         gl.FRAMEBUFFER,
         gl.COLOR_ATTACHMENT0,
         gl.TEXTURE_2D,
-        stars_fb_texture,
+        terrain_fb_texture,
         0,
     );
+
+    const sample_offset_uniform = gl.GetUniformLocation(terrain_program, "sample_offset");
+
+    // Terrain texture setup
+
+    // get max height of what we drew, then scale and add a small buffer
+    var max_height: f32 = -1.0;
+    for (terrain_geometry.vertices) |vertex| {
+        max_height = @max(max_height, vertex.y);
+    }
+    // account for W coordinate in shader
+    max_height /= 0.995;
+    max_height += 0.005;
+
+    const terrain_tex_vertices = [_]Vertex2D{
+        .{ .x = -1.0, .y = max_height },
+        .{ .x = -1.0, .y = -1.0 },
+        .{ .x = 1.0, .y = max_height },
+        .{ .x = 1.0, .y = -1.0 },
+    };
+
+    // Create and fill the vertex and index buffers
+    gl.BindVertexArrayOES(terrain_tex_vao);
+
+    var terrain_tex_buffers: [2]gl.uint = undefined;
+    gl.GenBuffers(terrain_tex_buffers.len, &terrain_tex_buffers);
+    defer gl.DeleteBuffers(terrain_tex_buffers.len, &terrain_tex_buffers);
+    const terrain_tex_vertex_buffer = terrain_tex_buffers[0];
+    const terrain_tex_index_buffer = terrain_tex_buffers[1];
+
+    gl.BindBuffer(gl.ARRAY_BUFFER, terrain_tex_vertex_buffer);
+    gl.BufferData(
+        gl.ARRAY_BUFFER,
+        @sizeOf(@TypeOf(terrain_tex_vertices)),
+        &terrain_tex_vertices,
+        gl.STATIC_DRAW,
+    );
+
+    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, terrain_tex_index_buffer);
+    gl.BufferData(
+        gl.ELEMENT_ARRAY_BUFFER,
+        @sizeOf(@TypeOf(terrain_tex_indices)),
+        &terrain_tex_indices,
+        gl.STATIC_DRAW,
+    );
+
+    // Set up shaders
+    const terrain_tex_frag_shader_text = @embedFile("shaders/terrain_tex.frag");
+    const terrain_tex_frag_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
+    defer gl.DeleteShader(terrain_tex_frag_shader);
+    gl.ShaderSource(
+        terrain_tex_frag_shader,
+        1,
+        &.{terrain_tex_frag_shader_text},
+        &.{terrain_tex_frag_shader_text.len},
+    );
+    gl.CompileShader(terrain_tex_frag_shader);
+
+    const terrain_tex_program = gl.CreateProgram();
+    defer gl.DeleteProgram(terrain_tex_program);
+    gl.AttachShader(terrain_tex_program, framebuffer_vert_shader);
+    gl.AttachShader(terrain_tex_program, terrain_tex_frag_shader);
+    gl.LinkProgram(terrain_tex_program);
+    gl.UseProgram(terrain_tex_program);
+
+    // Set up vertex attributes
+    gl.BindAttribLocation(terrain_tex_program, terrain_tex_pos_attrib, "position");
+    // tightly packed vec2 array
+    gl.VertexAttribPointer(
+        terrain_tex_pos_attrib,
+        2,
+        gl.FLOAT,
+        gl.FALSE,
+        0,
+        0,
+    );
+    gl.EnableVertexAttribArray(terrain_tex_pos_attrib);
 
     // bind default framebuffer
     gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
 
-    var global_star_scale = @as(f32, @floatFromInt(window.getFramebufferSize().height)) / 120.0;
-    var stars_fb_needs_clear = true;
+    var global_star_scale: f32 = undefined;
     var smear_start_time: i64 = -1;
     var smear_end_time: i64 = -1;
+
+    // create fake resize event to initialize things that rely on the window size
+    {
+        const framebuffer_size = window.getFramebufferSize();
+        resize_event = ResizeEvent{
+            .width = framebuffer_size.width,
+            .height = framebuffer_size.height,
+        };
+    }
 
     main_loop: while (true) {
         glfw.pollEvents();
@@ -445,6 +573,7 @@ pub fn main() !void {
 
         const ms_time: i64 = std.time.milliTimestamp();
 
+        var stars_fb_needs_clear = false;
         var stars_smear_opacity: f32 = 0.0;
         if (ms_time > smear_start_time and ms_time < smear_end_time) {
             const smear_time_remaining = smear_end_time - ms_time;
@@ -459,34 +588,84 @@ pub fn main() !void {
             const width: gl.sizei = @intCast(e.width);
             const height: gl.sizei = @intCast(e.height);
 
+            global_star_scale = @as(f32, @floatFromInt(e.height)) / 120.0;
+
             gl.Viewport(0, 0, width, height);
-            setupTextureTarget(
+
+            gl.BindTexture(gl.TEXTURE_2D, stars_fb_texture);
+            gl.TexImage2D(
+                gl.TEXTURE_2D,
+                0,
+                gl.RGBA,
                 width,
                 height,
-                stars_fb_texture,
+                0,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                null,
             );
             stars_fb_needs_clear = true;
 
-            global_star_scale = @as(f32, @floatFromInt(e.height)) / 120.0;
+            const px_width = 2.0 / @as(f64, @floatFromInt(width));
+            const px_height = 2.0 / @as(f64, @floatFromInt(height));
+            const sample_offset_1: f32 = @floatCast(px_width / 8.0);
+            const sample_offset_2: f32 = @floatCast((px_height * 3.0) / 8.0);
+
+            gl.BindTexture(gl.TEXTURE_2D, terrain_fb_texture);
+            gl.TexImage2D(
+                gl.TEXTURE_2D,
+                0,
+                gl.RGBA,
+                width,
+                height,
+                0,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                null,
+            );
+
+            gl.BindFramebuffer(gl.FRAMEBUFFER, terrain_framebuffer);
+            gl.ClearColor(0.0, 0.0, 0.0, 0.0);
+            // no depth on render target
+            gl.Clear(gl.COLOR_BUFFER_BIT);
+
+            // draw terrain to texture using 4 samples in a titled square pattern
+            gl.BlendFunc(gl.ONE, gl.ONE);
+            gl.BlendEquation(gl.FUNC_ADD);
+            gl.UseProgram(terrain_program);
+            gl.BindVertexArrayOES(terrain_vao);
+            gl.Uniform2f(sample_offset_uniform, -sample_offset_1, sample_offset_2);
+            gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
+            gl.Uniform2f(sample_offset_uniform, sample_offset_1, -sample_offset_2);
+            gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
+            gl.Uniform2f(sample_offset_uniform, sample_offset_2, sample_offset_1);
+            gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
+            gl.Uniform2f(sample_offset_uniform, -sample_offset_2, -sample_offset_1);
+            gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
+
+            gl.BlendFuncSeparate(
+                gl.SRC_ALPHA,
+                gl.ONE_MINUS_SRC_ALPHA,
+                gl.ONE,
+                gl.ONE_MINUS_SRC_ALPHA,
+            );
 
             resize_event = null;
         }
 
-        // Render terrain
+        // Render terrain texture
         gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
         gl.DepthMask(gl.TRUE);
-        gl.Disable(gl.BLEND);
+        // Don't depth test with it's own depth values
+        gl.DepthFunc(gl.ALWAYS);
+        gl.BlendEquation(gl.FUNC_ADD);
         gl.ClearColor(0.0, 0.0, 0.0, 1.0);
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        // TODO: render terrain with STREAM_DRAW to max-width, scaled constrained height texture.
-        //   render that texture through an SSAA shader to downscale to another texture.
-        //   finally, use that texture to render a quad with the depth calculations to allow
-        //   for depth test.
-        // https://github.com/TheRensei/OpenGL-MSAA-SSAA/blob/master/Coursework/OpenGL/Resources/Shaders/SSAA.fs
-        gl.UseProgram(terrain_program);
-        gl.BindVertexArrayOES(terrain_vao);
-        gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
+        gl.UseProgram(terrain_tex_program);
+        gl.BindVertexArrayOES(terrain_tex_vao);
+        gl.BindTexture(gl.TEXTURE_2D, terrain_fb_texture);
+        gl.DrawElements(gl.TRIANGLES, terrain_tex_indices.len, gl.UNSIGNED_SHORT, 0);
 
         // Render stars and smears
         if (stars_fb_needs_clear) {
@@ -500,8 +679,8 @@ pub fn main() !void {
             gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
         }
 
+        gl.DepthFunc(gl.LESS);
         gl.DepthMask(gl.FALSE);
-        gl.Enable(gl.BLEND);
         gl.UseProgram(stars_program);
         gl.BindVertexArrayOES(stars_vao);
 
@@ -556,7 +735,7 @@ pub fn main() !void {
 // 14 misclassified stars in the initial dataset
 const star_count: u16 = 9110 - 14;
 
-const stars = genStarsPreloaded();
+const stars_geometry = genStarGeometryPreloaded();
 
 const stars_color_attrib = 0;
 const stars_pos_attrib = 1;
@@ -579,7 +758,7 @@ const StarsGeometry = extern struct {
     vertices: [star_count]StarVertex,
 };
 
-fn genStarsPreloaded() StarsGeometry {
+fn genStarGeometryPreloaded() StarsGeometry {
     std.debug.assert(builtin.cpu.arch.endian() == .little);
 
     const preloaded_data = @embedFile("assets/stars-preloaded.bin");
@@ -588,7 +767,7 @@ fn genStarsPreloaded() StarsGeometry {
     return @bitCast(non_terminated_data.*);
 }
 
-fn genStars() StarsGeometry {
+fn genStarGeometry() StarsGeometry {
     var stars_uninit: StarsGeometry = undefined;
 
     const bcs5_data = @embedFile("assets/bsc5.dat");
@@ -719,8 +898,7 @@ const TerrainGeometry = struct {
     indices: [terrain_indices]u16,
 };
 
-fn genTerrain(rand: std.Random) TerrainGeometry {
-    // TODO: software render with supersampling or msaa
+fn genTerrainGeometry(rand: std.Random) TerrainGeometry {
     var raw_noise_array: [terrain_divisions + 1]f32 = undefined;
 
     for (0..raw_noise_array.len) |idx| {
@@ -790,6 +968,13 @@ fn genTerrain(rand: std.Random) TerrainGeometry {
     return terrain;
 }
 
+const terrain_tex_pos_attrib: gl.uint = 0;
+
+const terrain_tex_indices = [_]u16{
+    0, 1, 3,
+    0, 3, 2,
+};
+
 const framebuffer_pos_attrib: gl.uint = 0;
 
 const framebuffer_vertices = [_]Vertex2D{
@@ -797,21 +982,6 @@ const framebuffer_vertices = [_]Vertex2D{
     .{ .x = 3.0, .y = -1.0 },
     .{ .x = -1.0, .y = 3.0 },
 };
-
-fn setupTextureTarget(width: gl.sizei, height: gl.sizei, texture: gl.uint) void {
-    gl.BindTexture(gl.TEXTURE_2D, texture);
-    gl.TexImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        width,
-        height,
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        null,
-    );
-}
 
 const ResizeEvent = struct {
     width: u32,
