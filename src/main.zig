@@ -15,8 +15,8 @@ pub fn main() !void {
     glfw.setErrorCallback(logGLFWError);
 
     // todo: switch to wayland when done with renderdoc
-    // const preferred_platform: glfw.PlatformType = if (glfw.platformSupported(.wayland)) .wayland else .any;
-    if (!glfw.init(.{ .platform = .x11 })) {
+    const preferred_platform: glfw.PlatformType = if (glfw.platformSupported(.wayland)) .wayland else .any;
+    if (!glfw.init(.{ .platform = preferred_platform })) {
         glfw_log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
         return error.GLFWInitFailed;
     }
