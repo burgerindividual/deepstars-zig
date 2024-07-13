@@ -598,8 +598,7 @@ pub fn main() !void {
             const smear_time_remaining = smear_end_time - ms_time;
             stars_smear_opacity = @min(@as(f32, @floatFromInt(smear_time_remaining)) / 5000.0, 1.0);
         } else if (ms_time >= smear_end_time) {
-            // smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 80000);
-            smear_start_time = ms_time + 2000;
+            smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 80000);
             smear_end_time = smear_start_time + rand.intRangeAtMost(u32, 20000, 50000);
             stars_fb_needs_clear = true;
         }
