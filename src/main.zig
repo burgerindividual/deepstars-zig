@@ -101,13 +101,6 @@ pub fn main() !void {
         gl.DebugMessageInsertKHR(gl.DEBUG_SOURCE_APPLICATION_KHR, gl.DEBUG_TYPE_OTHER_KHR, 0, gl.DEBUG_SEVERITY_NOTIFICATION_KHR, message.len, message);
     }
 
-    // // init renderdoc
-    // var renderdoc_lib = try std.DynLib.open("/usr/lib/librenderdoc.so");
-    // const renderdoc_init_fn = renderdoc_lib.lookup(*const fn () void, "dlopen");
-    // renderdoc_init_fn.?();
-
-    const initial_fbo_bounds = window.getFramebufferSize();
-
     var random = std.Random.Xoroshiro128.init(@bitCast(std.time.milliTimestamp()));
     const rand = random.random();
 
@@ -340,18 +333,6 @@ pub fn main() !void {
 
     gl.BindFramebuffer(gl.FRAMEBUFFER, stars_framebuffer);
     gl.BindTexture(gl.TEXTURE_2D, stars_fb_texture);
-    gl.TexImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        @intCast(initial_fbo_bounds.width),
-        @intCast(initial_fbo_bounds.height),
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        null,
-    );
-
     // the default parameters rely on mipmaps, which we don't want
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
@@ -450,18 +431,6 @@ pub fn main() !void {
 
     gl.BindFramebuffer(gl.FRAMEBUFFER, terrain_framebuffer);
     gl.BindTexture(gl.TEXTURE_2D, terrain_fb_texture);
-    gl.TexImage2D(
-        gl.TEXTURE_2D,
-        0,
-        gl.RGBA,
-        @intCast(initial_fbo_bounds.width),
-        @intCast(initial_fbo_bounds.height),
-        0,
-        gl.RGBA,
-        gl.UNSIGNED_BYTE,
-        null,
-    );
-
     // the default parameters rely on mipmaps, which we don't want
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
