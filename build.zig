@@ -45,7 +45,6 @@ pub fn build(b: *std.Build) void {
             .KHR_debug,
             .OES_vertex_array_object,
             .EXT_blend_minmax,
-            .OES_required_internalformat,
         },
     });
 
