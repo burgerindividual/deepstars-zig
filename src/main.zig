@@ -2,21 +2,23 @@ const std = @import("std");
 const builtin = @import("builtin");
 const glfw = @import("mach-glfw");
 const gl = @import("gl");
+const log = @import("log.zig");
 const zm = @import("zmath");
+
+const fov_y_degrees = 45.0;
+const star_scale_degrees = 0.28;
+
+const terrain_divisions: u16 = 600;
+const terrain_octaves = 7;
+const terrain_amplitude = 0.25;
+const terrain_y_offset = -0.9;
 
 var gl_procs: gl.ProcTable = undefined;
 
-const glfw_log = std.log.scoped(.glfw);
-const gl_log = std.log.scoped(.gl);
-
 pub fn main() !void {
-    @setFloatMode(.optimized);
+    glfw.setErrorCallback(log.logGLFWError);
 
-    glfw.setErrorCallback(logGLFWError);
-
-    // todo: switch to wayland when done with renderdoc
     if (!glfw.init(.{ .platform = .wayland })) {
-        glfw_log.err("failed to initialize GLFW: {?s}", .{glfw.getErrorString()});
         return error.GLFWInitFailed;
     }
     defer glfw.terminate();
@@ -54,7 +56,6 @@ pub fn main() !void {
             // .samples = 8,
         },
     ) orelse {
-        glfw_log.err("failed to create GLFW window: {?s}", .{glfw.getErrorString()});
         return error.CreateWindowFailed;
     };
     defer window.destroy();
@@ -75,7 +76,7 @@ pub fn main() !void {
 
     // Initialize the OpenGL procedure table.
     if (!gl_procs.init(glfw.getProcAddress)) {
-        gl_log.err("failed to load OpenGL functions", .{});
+        log.gl.err("failed to load OpenGL functions", .{});
         return error.GLInitFailed;
     }
 
@@ -85,7 +86,7 @@ pub fn main() !void {
 
     // Enable debug messages in debug mode if possible
     if (std.debug.runtime_safety and glfw.extensionSupported("GL_KHR_debug")) {
-        gl.DebugMessageCallbackKHR(logGLError, null);
+        gl.DebugMessageCallbackKHR(log.logGLError, null);
         // Enable all messages
         gl.DebugMessageControlKHR(
             gl.DONT_CARE,
@@ -97,20 +98,18 @@ pub fn main() !void {
         );
 
         const message: [:0]const u8 = "OpenGL Debug Messages Initialized";
-        gl.DebugMessageInsertKHR(gl.DEBUG_SOURCE_APPLICATION_KHR, gl.DEBUG_TYPE_OTHER_KHR, 0, gl.DEBUG_SEVERITY_NOTIFICATION_KHR, message.len, message);
+        gl.DebugMessageInsertKHR(
+            gl.DEBUG_SOURCE_APPLICATION_KHR,
+            gl.DEBUG_TYPE_OTHER_KHR,
+            0,
+            gl.DEBUG_SEVERITY_NOTIFICATION_KHR,
+            message.len,
+            message,
+        );
     }
 
     var random = std.Random.Xoroshiro128.init(@bitCast(std.time.milliTimestamp()));
     const rand = random.random();
-
-    // uncomment this to generate stars-preloaded.bin
-    // const loaded_stars = genStarGeometry();
-    // const file = std.fs.cwd().createFile(
-    //     "stars-preloaded.bin",
-    //     .{},
-    // ) catch unreachable;
-    // file.writeAll(@as(*const [@sizeOf(StarsGeometry)]u8, @ptrCast(&loaded_stars))) catch unreachable;
-    // file.close();
 
     ////
     //// Set up matrices and star geometry
@@ -140,17 +139,6 @@ pub fn main() !void {
         zm.f32x4(0.0, 0.0, 0.0, 0.0),
         look_direction,
         up_direction,
-    );
-
-    const aspect_ratio = @as(f32, @floatFromInt(preferred_width)) / @as(f32, @floatFromInt(preferred_height));
-    const fov_x = 45.0;
-    const fov_y = fov_x * @as(f32, @floatFromInt(preferred_height)) / @as(f32, @floatFromInt(preferred_width));
-    // don't use GL version, we want the depth values between 0 and 1
-    const projection_matrix = zm.perspectiveFovRh(
-        fov_y * std.math.rad_per_deg,
-        aspect_ratio,
-        0.1,
-        10.0,
     );
 
     // Enable blending
@@ -544,6 +532,8 @@ pub fn main() !void {
     var smear_start_time: i64 = -1;
     var smear_end_time: i64 = -1;
 
+    var projection_matrix: zm.Mat = undefined;
+
     // create fake resize event to initialize things that rely on the window size
     {
         const framebuffer_size = window.getFramebufferSize();
@@ -566,16 +556,28 @@ pub fn main() !void {
             const smear_time_remaining = smear_end_time - ms_time;
             stars_smear_opacity = @min(@as(f32, @floatFromInt(smear_time_remaining)) / 5000.0, 1.0);
         } else if (ms_time >= smear_end_time) {
-            smear_start_time = ms_time + rand.intRangeAtMost(u32, 10000, 80000);
+            smear_start_time = ms_time + rand.intRangeAtMost(u32, 15000, 80000);
             smear_end_time = smear_start_time + rand.intRangeAtMost(u32, 20000, 50000);
             stars_fb_needs_clear = true;
         }
 
         if (resize_event) |e| {
+            const width_f: f32 = @floatFromInt(e.width);
+            const height_f: f32 = @floatFromInt(e.height);
             const width: gl.sizei = @intCast(e.width);
             const height: gl.sizei = @intCast(e.height);
 
-            global_star_scale = @as(f32, @floatFromInt(e.height)) / 120.0;
+            const aspect_ratio = width_f / height_f;
+            // don't use GL version, we want the depth values between 0 and 1
+            projection_matrix = zm.perspectiveFovRh(
+                fov_y_degrees * std.math.rad_per_deg,
+                aspect_ratio,
+                0.1,
+                2.0,
+            );
+
+            // 220 generally seems realistic
+            global_star_scale = (height_f / fov_y_degrees) * star_scale_degrees;
 
             gl.Viewport(0, 0, width, height);
 
@@ -593,8 +595,8 @@ pub fn main() !void {
             );
             stars_fb_needs_clear = true;
 
-            const px_width = 2.0 / @as(f64, @floatFromInt(width));
-            const px_height = 2.0 / @as(f64, @floatFromInt(height));
+            const px_width = 2.0 / @as(f64, @floatFromInt(e.width));
+            const px_height = 2.0 / @as(f64, @floatFromInt(e.height));
             const sample_offset_1: f32 = @floatCast(px_width / 8.0);
             const sample_offset_2: f32 = @floatCast((px_height * 3.0) / 8.0);
 
@@ -728,7 +730,7 @@ pub fn main() !void {
 }
 
 // 14 misclassified stars in the initial dataset
-const star_count: u16 = 9110 - 14;
+pub const star_count: u16 = 9110 - 14;
 
 const stars_geometry = genStarGeometryPreloaded();
 
@@ -736,7 +738,7 @@ const stars_color_attrib = 0;
 const stars_pos_attrib = 1;
 const stars_size_attrib = 2;
 
-const StarVertex = extern struct {
+pub const StarVertex = extern struct {
     r: f32,
     g: f32,
     b: f32,
@@ -749,7 +751,7 @@ const StarVertex = extern struct {
     size: f32,
 };
 
-const StarsGeometry = extern struct {
+pub const StarsGeometry = extern struct {
     vertices: [star_count]StarVertex,
 };
 
@@ -762,122 +764,6 @@ fn genStarGeometryPreloaded() StarsGeometry {
     return @bitCast(non_terminated_data.*);
 }
 
-fn genStarGeometry() StarsGeometry {
-    var stars_uninit: StarsGeometry = undefined;
-
-    const bcs5_data = @embedFile("assets/bsc5.dat");
-
-    var idx: u16 = 0;
-    var iter = std.mem.splitScalar(u8, bcs5_data[0..], '\n');
-    while (iter.next()) |line| {
-        if (line.len < 113) {
-            continue;
-        }
-
-        const right_ascension_hr: f64 = @floatFromInt(std.fmt.parseInt(u8, line[75..77], 10) catch continue);
-        const right_ascension_min: f64 = @floatFromInt(std.fmt.parseInt(u8, line[77..79], 10) catch continue);
-        const right_ascension_sec: f64 = std.fmt.parseFloat(f64, line[79..83]) catch continue;
-        const declination_sign: f64 = if (line[83] == '-') -1.0 else 1.0;
-        const declination_deg: f64 = @floatFromInt(std.fmt.parseInt(u8, line[84..86], 10) catch continue);
-        const declination_min: f64 = @floatFromInt(std.fmt.parseInt(u8, line[86..88], 10) catch continue);
-        const declination_sec: f64 = @floatFromInt(std.fmt.parseInt(u8, line[88..90], 10) catch continue);
-        const v_magnitude = std.fmt.parseFloat(
-            f32,
-            std.mem.trim(u8, line[102..107], &std.ascii.whitespace),
-        ) catch continue;
-        // some entries don't have a B-V, so fall back to 0.0
-        const bv = std.fmt.parseFloat(
-            f32,
-            std.mem.trim(u8, line[109..114], &std.ascii.whitespace),
-        ) catch 0.0;
-
-        const right_ascension_rad: f64 = (right_ascension_hr + right_ascension_min / 60.0 + right_ascension_sec / 3600.0) * (std.math.tau / 24.0);
-        const declination_rad: f64 = declination_sign * (declination_deg + declination_min / 60.0 + declination_sec / 3600.0) * std.math.rad_per_deg;
-        const color = rgbFromBv(bv);
-
-        const x: f32 = @floatCast(@cos(declination_rad) * @cos(right_ascension_rad));
-        const y: f32 = @floatCast(@cos(declination_rad) * @sin(right_ascension_rad));
-        const z: f32 = @floatCast(@sin(declination_rad));
-
-        const star_brightness_modifier = 5.5;
-        // vmag high -1.46, low 8.00ish
-        const scaled_mag: f32 = @floatCast(@min(std.math.pow(
-            f64,
-            100.0,
-            (-v_magnitude - 1.46 + star_brightness_modifier) / 5.0,
-        ), 1.0));
-        @exp(1);
-        // the sqrt accounts for the surface area having a squared relationship to diameter.
-        // having the alpha and the size be the square root of the scaled magnitude makes the
-        // final percieved brightness the same as the scaled magnitude.
-        const sqrt_mag = @sqrt(scaled_mag);
-
-        const color_trunc: f32x3 = @floatCast(color);
-
-        stars_uninit.vertices[idx] = StarVertex{
-            .r = color_trunc[0],
-            .g = color_trunc[1],
-            .b = color_trunc[2],
-            .a = sqrt_mag,
-
-            .x = x,
-            .y = y,
-            .z = z,
-
-            .size = sqrt_mag,
-        };
-
-        idx += 1;
-    }
-
-    std.debug.assert(idx == star_count);
-
-    return stars_uninit;
-}
-
-const f64x4 = @Vector(4, f64);
-const f64x3 = @Vector(3, f64);
-const f32x3 = @Vector(3, f32);
-
-// D65 white point approximation from the following table:
-// http://www.vendian.org/mncharity/dir3/blackbody/UnstableURLs/bbr_color.html
-fn rgbFromBv(bv: f64) f32x3 {
-    @setFloatMode(.optimized);
-    const bv_splat: f64x4 = @splat(bv);
-
-    // R, G1, B, G2
-    const coeff_vectors = [_]f64x4{
-        .{ 1.0244838411856621e-2, -1.2981528394826059e-3, -1.4462486359369586e-2, 9.7277840557748207e-4 },
-        .{ 9.4009027654247290e-2, 2.4919995578097424e-2, 1.3036467204988925e-1, 3.4402198113594427e-2 },
-        .{ 3.9806863413614252e-1, -2.1607300214538638e-1, -5.9516947822267696e-1, 2.4389228181984887e-1 },
-        .{ 7.9561522955560138e-1, 1.0713298831304217e+0, 1.2478054530763567e+0, 8.5766884841475788e-1 },
-    };
-
-    var poly_eval = coeff_vectors[0];
-    inline for (1..coeff_vectors.len) |idx| {
-        poly_eval = poly_eval * bv_splat + coeff_vectors[idx];
-    }
-
-    const bottom_clamp: f64x3 = @splat(0.0);
-    // use G2 as a top clamp for G1, otherwise clamp to 1.0
-    const top_clamp: f64x3 = @shuffle(
-        f64,
-        @Vector(1, f64){1.0},
-        poly_eval,
-        @Vector(3, i32){ 0, ~@as(i32, 3), 0 },
-    );
-    const trimmed_poly_eval = @shuffle(
-        f64,
-        poly_eval,
-        undefined,
-        @Vector(3, i32){ 0, 1, 2 },
-    );
-    const clamped_result = @min(@max(trimmed_poly_eval, bottom_clamp), top_clamp);
-
-    return @floatCast(clamped_result);
-}
-
-const terrain_divisions: u16 = 75;
 const terrain_vertices: u16 = 2 + (terrain_divisions * 2);
 const terrain_indices: u32 = terrain_divisions * 6;
 
@@ -897,26 +783,20 @@ fn genTerrainGeometry(rand: std.Random) TerrainGeometry {
     var raw_noise_array: [terrain_divisions + 1]f32 = undefined;
 
     for (0..raw_noise_array.len) |idx| {
-        const float = rand.float(f32);
-        const float_bits: u32 = @bitCast(float);
-        const sign_bit: u32 = @as(u32, rand.int(u1)) << 31;
-        raw_noise_array[idx] = @bitCast(float_bits | sign_bit);
+        raw_noise_array[idx] = rand.float(f32);
     }
 
     var terrain: TerrainGeometry = undefined;
 
     var vert_idx: u16 = 0;
 
-    // var y: f32 = -0.65;
     for (0..terrain_divisions + 1) |div_idx| {
         const x = @as(f32, @floatFromInt(2 * div_idx)) / @as(f32, @floatFromInt(terrain_divisions)) - 1.0;
-        // y += (rand.float(f32) - 0.5) * 0.07;
 
-        const octaves = 4;
-        var frequency: f32 = std.math.pow(f32, 2.0, @floatFromInt(-octaves));
-        var amplitude: f32 = 0.10;
+        var frequency: f32 = std.math.pow(f32, 2.0, @floatFromInt(-terrain_octaves));
+        var amplitude: f32 = terrain_amplitude;
         var perlin_output: f32 = 0.0;
-        for (0..octaves) |_| {
+        for (0..terrain_octaves) |_| {
             const sample_x = @as(f32, @floatFromInt(div_idx)) * frequency;
             const sample_x_left: u32 = @intFromFloat(sample_x);
             const sample_x_right = sample_x_left + 1;
@@ -930,7 +810,7 @@ fn genTerrainGeometry(rand: std.Random) TerrainGeometry {
             amplitude /= 2.0;
         }
 
-        const y = perlin_output - 0.65;
+        const y = perlin_output + terrain_y_offset;
 
         terrain.vertices[vert_idx] = .{
             .x = x,
@@ -995,70 +875,5 @@ fn onFramebufferResized(_: glfw.Window, width: u32, height: u32) void {
 fn onKeyEvent(window: glfw.Window, key: glfw.Key, _: i32, _: glfw.Action, _: glfw.Mods) void {
     if (key == .escape) {
         window.setShouldClose(true);
-    }
-}
-
-fn logGLFWError(error_code: glfw.ErrorCode, description: [:0]const u8) void {
-    glfw_log.err("{}: {s}\n", .{ error_code, description });
-}
-
-fn logGLError(
-    source: gl.@"enum",
-    message_type: gl.@"enum",
-    id: gl.uint,
-    severity: gl.@"enum",
-    _: gl.sizei,
-    message: [*:0]const gl.char,
-    _: ?*const anyopaque,
-) callconv(gl.APIENTRY) void {
-    const source_string: []const u8 = switch (source) {
-        gl.DEBUG_SOURCE_API_KHR => "API",
-        gl.DEBUG_SOURCE_APPLICATION_KHR => "Application",
-        gl.DEBUG_SOURCE_SHADER_COMPILER_KHR => "Shader Compiler",
-        gl.DEBUG_SOURCE_THIRD_PARTY_KHR => "Third Party",
-        gl.DEBUG_SOURCE_WINDOW_SYSTEM_KHR => "Window System",
-        gl.DEBUG_TYPE_OTHER_KHR => "Other",
-        else => unreachable,
-    };
-
-    const type_string: []const u8 = switch (message_type) {
-        gl.DEBUG_TYPE_ERROR_KHR => "Error",
-        gl.DEBUG_TYPE_DEPRECATED_BEHAVIOR_KHR => "Deprecated Behavior",
-        gl.DEBUG_TYPE_UNDEFINED_BEHAVIOR_KHR => "Undefined Behavior",
-        gl.DEBUG_TYPE_PORTABILITY_KHR => "Portability",
-        gl.DEBUG_TYPE_PERFORMANCE_KHR => "Performance",
-        gl.DEBUG_TYPE_MARKER_KHR => "Marker",
-        gl.DEBUG_TYPE_PUSH_GROUP_KHR => "Push Group",
-        gl.DEBUG_TYPE_POP_GROUP_KHR => "Pop Group",
-        gl.DEBUG_TYPE_OTHER_KHR => "Other",
-        else => unreachable,
-    };
-
-    switch (severity) {
-        gl.DEBUG_SEVERITY_HIGH_KHR => gl_log.err("Severity: High, Type: {s}, Source: {s}, ID: {} | {s}\n", .{
-            type_string,
-            source_string,
-            id,
-            message,
-        }),
-        gl.DEBUG_SEVERITY_MEDIUM_KHR => gl_log.warn("Severity: Medium, Type: {s}, Source: {s}, ID: {} | {s}\n", .{
-            type_string,
-            source_string,
-            id,
-            message,
-        }),
-        gl.DEBUG_SEVERITY_LOW_KHR => gl_log.info("Severity: Low, Type: {s}, Source: {s}, ID: {} | {s}\n", .{
-            type_string,
-            source_string,
-            id,
-            message,
-        }),
-        gl.DEBUG_SEVERITY_NOTIFICATION_KHR => gl_log.info("Severity: Notification, Type: {s}, Source: {s}, ID: {} | {s}\n", .{
-            type_string,
-            source_string,
-            id,
-            message,
-        }),
-        else => unreachable,
     }
 }

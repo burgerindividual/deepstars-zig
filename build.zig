@@ -2,20 +2,20 @@ const std = @import("std");
 
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{
-        .default_target = .{
-            .cpu_arch = .aarch64,
-            .cpu_model = .{
-                .explicit = &std.Target.aarch64.cpu.cortex_a53,
-            },
-            .os_tag = .linux,
-            .abi = .gnu,
-        },
         // .default_target = .{
-        //     .cpu_arch = .x86_64,
+        //     .cpu_arch = .aarch64,
         //     .cpu_model = .{
-        //         .explicit = &std.Target.x86.cpu.x86_64_v3,
+        //         .explicit = &std.Target.aarch64.cpu.cortex_a53,
         //     },
+        //     .os_tag = .linux,
+        //     .abi = .gnu,
         // },
+        .default_target = .{
+            .cpu_arch = .x86_64,
+            .cpu_model = .{
+                .explicit = &std.Target.x86.cpu.x86_64_v3,
+            },
+        },
     });
 
     const optimize = b.standardOptimizeOption(.{});
@@ -78,4 +78,21 @@ pub fn build(b: *std.Build) void {
     // This will evaluate the `run` step rather than the default, which is "install".
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
+
+    const gen_stars_exe = b.addExecutable(.{
+        .name = "deepstars-gen-stars",
+        .root_source_file = b.path("src/gen_stars.zig"),
+        .target = target,
+        .optimize = optimize,
+        .single_threaded = true,
+    });
+
+    // b.installArtifact(gen_stars_exe);
+
+    const gen_stars_cmd = b.addRunArtifact(gen_stars_exe);
+
+    // gen_stars_cmd.step.dependOn(b.getInstallStep());
+
+    const gen_stars_step = b.step("genStars", "Generate stars and save them to disk");
+    gen_stars_step.dependOn(&gen_stars_cmd.step);
 }
