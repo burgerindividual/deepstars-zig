@@ -18,7 +18,7 @@ var gl_procs: gl.ProcTable = undefined;
 pub fn main() !void {
     glfw.setErrorCallback(log.logGLFWError);
 
-    if (!glfw.init(.{ .platform = .wayland })) {
+    if (!glfw.init(.{ .platform = getPreferredPlatform() })) {
         return error.GLFWInitFailed;
     }
     defer glfw.terminate();
@@ -726,6 +726,14 @@ pub fn main() !void {
         gl.DepthFunc(gl.LESS);
 
         window.swapBuffers();
+    }
+}
+
+pub fn getPreferredPlatform() glfw.PlatformType {
+    if (glfw.platformSupported(.wayland)) {
+        return .wayland;
+    } else {
+        return .any;
     }
 }
 
