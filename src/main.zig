@@ -4,21 +4,33 @@ const glfw = @import("mach-glfw");
 const gl = @import("gl");
 const log = @import("log.zig");
 const zm = @import("zmath");
+const zigimg = @import("zigimg");
+
+const fps_limit = 10.0;
+const frametime_limit_ns: u64 = @intFromFloat((1.0 / fps_limit) * std.time.ns_per_s);
 
 const fov_y_degrees = 45.0;
-const star_scale_degrees = 0.28;
+const star_scale_degrees = 0.32;
+const star_rot_speed = 1800000;
 
-const terrain_divisions: u16 = 600;
-const terrain_octaves = 7;
-const terrain_amplitude = 0.25;
-const terrain_y_offset = -0.9;
+const terrain_divisions: u16 = 1000;
+const terrain_octaves = 6;
+const terrain_amplitude = 0.08;
+const terrain_z_offset = 0.0 - (terrain_amplitude / 2.0);
+const terrain_radius = 1.0;
 
 var gl_procs: gl.ProcTable = undefined;
+
+// ideas:
+// wireframe globe icon
+// comets
+// larger stars dataset
+// layered mountains
 
 pub fn main() !void {
     glfw.setErrorCallback(log.logGLFWError);
 
-    if (!glfw.init(.{ .platform = getPreferredPlatform() })) {
+    if (!glfw.init(.{ .platform = .x11 })) {
         return error.GLFWInitFailed;
     }
     defer glfw.terminate();
@@ -38,7 +50,7 @@ pub fn main() !void {
     const window: glfw.Window = glfw.Window.create(
         preferred_width,
         preferred_height,
-        "DarkStars",
+        "DeepStars Zig",
         primary_monitor,
         null,
         .{
@@ -53,7 +65,6 @@ pub fn main() !void {
             // what happens if the platform doesn't support KHR_no_error?
             // .context_no_error = !std.debug.runtime_safety,
             // .context_creation_api = .egl_context_api,
-            // .samples = 8,
         },
     ) orelse {
         return error.CreateWindowFailed;
@@ -71,7 +82,7 @@ pub fn main() !void {
     // Disable cursor
     window.setInputModeCursor(.hidden);
 
-    // Enable VSync to avoid drawing more often than necessary.
+    // Enable VSync
     glfw.swapInterval(1);
 
     // Initialize the OpenGL procedure table.
@@ -118,7 +129,7 @@ pub fn main() !void {
         zm.f32x4(1.0, 0.0, 0.0, 1.0),
         std.math.tau * rand.float(f32),
     );
-    const look_dir_quaternion = zm.quatFromNormAxisAngle(
+    const stars_look_dir_quaternion = zm.quatFromNormAxisAngle(
         zm.f32x4(0.0, 0.0, 1.0, 1.0),
         std.math.tau * rand.float(f32),
     );
@@ -126,19 +137,35 @@ pub fn main() !void {
         up_dir_quaternion,
         zm.f32x4(0.0, 0.0, 1.0, 1.0),
     );
-    const look_direction = zm.rotate(
+    const stars_look_direction = zm.rotate(
         zm.qmul(
-            look_dir_quaternion,
+            stars_look_dir_quaternion,
             up_dir_quaternion,
         ),
         zm.f32x4(1.0, 0.0, 0.0, 1.0),
     );
     // +Z represents the north pole, but we randomize the up direction
     // +X represents going into the screen
-    const view_matrix = zm.lookToRh(
+    const stars_view_matrix = zm.lookToRh(
         zm.f32x4(0.0, 0.0, 0.0, 0.0),
-        look_direction,
+        stars_look_direction,
         up_direction,
+    );
+
+    const terrain_look_dir_quaternion = zm.quatFromNormAxisAngle(
+        zm.f32x4(0.0, 1.0, 0.0, 1.0),
+        20.0 * std.math.rad_per_deg,
+    );
+
+    const terrain_look_dir = zm.rotate(
+        terrain_look_dir_quaternion,
+        zm.f32x4(-1.0, 0.0, 0.0, 1.0),
+    );
+
+    const terrain_view_matrix = zm.lookToRh(
+        zm.f32x4(0.0, 0.0, 0.0, 0.0),
+        terrain_look_dir,
+        zm.f32x4(0.0, 0.0, 1.0, 1.0),
     );
 
     // Enable blending
@@ -307,7 +334,7 @@ pub fn main() !void {
     gl.EnableVertexAttribArray(stars_size_attrib);
 
     const global_scale_uniform = gl.GetUniformLocation(stars_program, "global_scale");
-    const mvp_matrix_uniform = gl.GetUniformLocation(stars_program, "mvp_matrix");
+    const stars_mvp_matrix_uniform = gl.GetUniformLocation(stars_program, "mvp_matrix");
 
     // Create stars framebuffer and texture
     var stars_framebuffer: gl.uint = undefined;
@@ -399,7 +426,7 @@ pub fn main() !void {
     // tightly packed vec2 array
     gl.VertexAttribPointer(
         terrain_pos_attrib,
-        2,
+        3,
         gl.FLOAT,
         gl.FALSE,
         0,
@@ -431,24 +458,9 @@ pub fn main() !void {
     );
 
     const sample_offset_uniform = gl.GetUniformLocation(terrain_program, "sample_offset");
+    const terrain_mvp_matrix_uniform = gl.GetUniformLocation(terrain_program, "mvp_matrix");
 
     // Terrain texture setup
-
-    // get max height of what we drew, then scale and add a small buffer
-    var max_height: f32 = -1.0;
-    for (terrain_geometry.vertices) |vertex| {
-        max_height = @max(max_height, vertex.y);
-    }
-    // account for W coordinate in shader
-    max_height /= 0.995;
-    max_height += 0.005;
-
-    const terrain_tex_vertices = [_]Vertex2D{
-        .{ .x = -1.0, .y = max_height },
-        .{ .x = -1.0, .y = -1.0 },
-        .{ .x = 1.0, .y = max_height },
-        .{ .x = 1.0, .y = -1.0 },
-    };
 
     // Create and fill the vertex and index buffers
     gl.BindVertexArrayOES(terrain_tex_vao);
@@ -462,8 +474,8 @@ pub fn main() !void {
     gl.BindBuffer(gl.ARRAY_BUFFER, terrain_tex_vertex_buffer);
     gl.BufferData(
         gl.ARRAY_BUFFER,
-        @sizeOf(@TypeOf(terrain_tex_vertices)),
-        &terrain_tex_vertices,
+        @sizeOf([4]Vertex2D),
+        null,
         gl.STATIC_DRAW,
     );
 
@@ -529,9 +541,10 @@ pub fn main() !void {
     gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
 
     var global_star_scale: f32 = undefined;
-    var smear_start_time: i64 = -1;
-    var smear_end_time: i64 = -1;
-
+    // ig these don't work before 1970 but like, whatever
+    var smear_start_time: i64 = 0;
+    var smear_end_time: i64 = 0;
+    var last_frame_ns: i128 = 0;
     var projection_matrix: zm.Mat = undefined;
 
     // create fake resize event to initialize things that rely on the window size
@@ -548,16 +561,26 @@ pub fn main() !void {
 
         if (window.shouldClose()) break :main_loop;
 
-        const ms_time: i64 = std.time.milliTimestamp();
+        const ns_time: i128 = std.time.nanoTimestamp();
+
+        const current_frametime: u64 = @intCast(ns_time - last_frame_ns);
+        if (fps_limit > 0.0 and current_frametime < frametime_limit_ns) {
+            const sleep_ns = frametime_limit_ns - current_frametime;
+            std.time.sleep(sleep_ns);
+            continue :main_loop;
+        }
+        last_frame_ns = ns_time;
+
+        const ms_time: i64 = @intCast(@divFloor(ns_time, std.time.ns_per_ms));
 
         var stars_fb_needs_clear = false;
         var stars_smear_opacity: f32 = 0.0;
         if (ms_time > smear_start_time and ms_time < smear_end_time) {
             const smear_time_remaining = smear_end_time - ms_time;
-            stars_smear_opacity = @min(@as(f32, @floatFromInt(smear_time_remaining)) / 5000.0, 1.0);
+            stars_smear_opacity = @min(@as(f32, @floatFromInt(smear_time_remaining)) / 6000.0, 1.0);
         } else if (ms_time >= smear_end_time) {
-            smear_start_time = ms_time + rand.intRangeAtMost(u32, 15000, 80000);
-            smear_end_time = smear_start_time + rand.intRangeAtMost(u32, 20000, 50000);
+            smear_start_time = ms_time + rand.intRangeAtMost(u32, 60000, 180000);
+            smear_end_time = smear_start_time + rand.intRangeAtMost(u32, 30000, 90000);
             stars_fb_needs_clear = true;
         }
 
@@ -572,9 +595,11 @@ pub fn main() !void {
             projection_matrix = zm.perspectiveFovRh(
                 fov_y_degrees * std.math.rad_per_deg,
                 aspect_ratio,
-                0.1,
+                0.01,
                 2.0,
             );
+
+            const terrain_mvp_matrix = zm.mul(terrain_view_matrix, projection_matrix);
 
             // 220 generally seems realistic
             global_star_scale = (height_f / fov_y_degrees) * star_scale_degrees;
@@ -623,6 +648,12 @@ pub fn main() !void {
             gl.BlendEquation(gl.FUNC_ADD);
             gl.UseProgram(terrain_program);
             gl.BindVertexArrayOES(terrain_vao);
+            gl.UniformMatrix4fv(
+                terrain_mvp_matrix_uniform,
+                1,
+                gl.FALSE,
+                zm.arrNPtr(&terrain_mvp_matrix),
+            );
             gl.Uniform2f(sample_offset_uniform, -sample_offset_1, sample_offset_2);
             gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
             gl.Uniform2f(sample_offset_uniform, sample_offset_1, -sample_offset_2);
@@ -631,6 +662,50 @@ pub fn main() !void {
             gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
             gl.Uniform2f(sample_offset_uniform, -sample_offset_2, -sample_offset_1);
             gl.DrawElements(gl.TRIANGLES, terrain_indices, gl.UNSIGNED_SHORT, 0);
+
+            // Read back pixels to determine optimal draw box
+            const alloc = std.heap.c_allocator;
+            const pixels = try alloc.alloc(RGBAPixel, e.width * e.height);
+
+            gl.ReadPixels(
+                0,
+                0,
+                width,
+                height,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                pixels.ptr,
+            );
+
+            // find first non-zero alpha pixel to know where content starts. we start
+            // from the bottom because we retrieve the image flipped upside down from opengl.
+            var y_px = e.height;
+            label: while (y_px > 0) {
+                y_px -= 1;
+                for (0..e.width) |x_px| {
+                    const alpha = pixels[(y_px * e.width) + x_px].a;
+                    if (alpha != 0) {
+                        break :label;
+                    }
+                }
+            }
+
+            // convert to gl coords
+            const max_height = ((@as(f32, @floatFromInt(y_px + 1)) * 2.0) / @as(f32, @floatFromInt(height))) - 1.0;
+
+            const terrain_tex_vertices = [_]Vertex2D{
+                .{ .x = -1.0, .y = max_height },
+                .{ .x = -1.0, .y = -1.0 },
+                .{ .x = 1.0, .y = max_height },
+                .{ .x = 1.0, .y = -1.0 },
+            };
+            gl.BindBuffer(gl.ARRAY_BUFFER, terrain_tex_vertex_buffer);
+            gl.BufferSubData(
+                gl.ARRAY_BUFFER,
+                0,
+                @sizeOf([4]Vertex2D),
+                &terrain_tex_vertices,
+            );
 
             gl.BlendFuncSeparate(
                 gl.SRC_ALPHA,
@@ -669,7 +744,7 @@ pub fn main() !void {
         gl.UseProgram(stars_program);
         gl.BindVertexArrayOES(stars_vao);
 
-        const angle = @as(f32, @floatFromInt(@mod(ms_time, 800000))) * (std.math.tau / 800000.0);
+        const angle = @as(f32, @floatFromInt(@mod(ms_time, star_rot_speed))) * -(std.math.tau / @as(comptime_float, star_rot_speed));
         const earth_rot_quaternion = zm.quatFromRollPitchYawV(zm.f32x4(
             0.0,
             0.0,
@@ -677,19 +752,20 @@ pub fn main() !void {
             0.0,
         ));
 
-        const model_matrix = zm.matFromQuat(earth_rot_quaternion);
-        const mvp_matrix = zm.mul(zm.mul(model_matrix, view_matrix), projection_matrix);
+        const stars_model_matrix = zm.matFromQuat(earth_rot_quaternion);
+        const stars_mvp_matrix = zm.mul(zm.mul(stars_model_matrix, stars_view_matrix), projection_matrix);
         gl.UniformMatrix4fv(
-            mvp_matrix_uniform,
+            stars_mvp_matrix_uniform,
             1,
             gl.FALSE,
-            zm.arrNPtr(&mvp_matrix),
+            zm.arrNPtr(&stars_mvp_matrix),
         );
         gl.Uniform1f(global_scale_uniform, global_star_scale);
 
         if (stars_smear_opacity > 0.0) {
             // Render smears to framebuffer
-            gl.BlendEquation(gl.MAX_EXT);
+            // gl.BlendEquation(gl.MAX_EXT);
+            gl.BlendEquationSeparate(gl.FUNC_ADD, gl.MAX_EXT);
             gl.DrawArrays(gl.POINTS, 0, star_count);
         }
 
@@ -704,6 +780,7 @@ pub fn main() !void {
         if (stars_smear_opacity > 0.0) {
             // Render smears framebuffer as fullscreen tri
             gl.BlendEquation(gl.MAX_EXT);
+            // gl.BlendEquationSeparate(gl.FUNC_ADD, gl.MAX_EXT);
             gl.UseProgram(framebuffer_program);
             gl.BindVertexArrayOES(framebuffer_vao);
             gl.BindTexture(gl.TEXTURE_2D, stars_fb_texture);
@@ -777,13 +854,14 @@ const terrain_indices: u32 = terrain_divisions * 6;
 
 const terrain_pos_attrib: gl.uint = 0;
 
-const Vertex2D = struct {
+const Vertex3D = struct {
     x: f32,
     y: f32,
+    z: f32,
 };
 
 const TerrainGeometry = struct {
-    vertices: [terrain_vertices]Vertex2D,
+    vertices: [terrain_vertices]Vertex3D,
     indices: [terrain_indices]u16,
 };
 
@@ -799,7 +877,10 @@ fn genTerrainGeometry(rand: std.Random) TerrainGeometry {
     var vert_idx: u16 = 0;
 
     for (0..terrain_divisions + 1) |div_idx| {
-        const x = @as(f32, @floatFromInt(2 * div_idx)) / @as(f32, @floatFromInt(terrain_divisions)) - 1.0;
+        const theta = ((@as(f32, @floatFromInt(div_idx)) * std.math.pi) / @as(f32, @floatFromInt(terrain_divisions))) + (std.math.pi / 2.0);
+
+        const x = terrain_radius * @cos(theta);
+        const y = terrain_radius * @sin(theta);
 
         var frequency: f32 = std.math.pow(f32, 2.0, @floatFromInt(-terrain_octaves));
         var amplitude: f32 = terrain_amplitude;
@@ -818,15 +899,17 @@ fn genTerrainGeometry(rand: std.Random) TerrainGeometry {
             amplitude /= 2.0;
         }
 
-        const y = perlin_output + terrain_y_offset;
+        const z = perlin_output + terrain_z_offset;
 
         terrain.vertices[vert_idx] = .{
             .x = x,
             .y = y,
+            .z = z,
         };
         terrain.vertices[vert_idx + 1] = .{
             .x = x,
-            .y = -1.0,
+            .y = y,
+            .z = -10.0,
         };
         vert_idx += 2;
     }
@@ -858,12 +941,24 @@ const terrain_tex_indices = [_]u16{
     0, 3, 2,
 };
 
-const framebuffer_pos_attrib: gl.uint = 0;
+const Vertex2D = struct {
+    x: f32,
+    y: f32,
+};
 
 const framebuffer_vertices = [_]Vertex2D{
     .{ .x = -1.0, .y = -1.0 },
     .{ .x = 3.0, .y = -1.0 },
     .{ .x = -1.0, .y = 3.0 },
+};
+
+const framebuffer_pos_attrib: gl.uint = 0;
+
+const RGBAPixel = struct {
+    r: u8,
+    g: u8,
+    b: u8,
+    a: u8,
 };
 
 const ResizeEvent = struct {
@@ -880,8 +975,59 @@ fn onFramebufferResized(_: glfw.Window, width: u32, height: u32) void {
     };
 }
 
-fn onKeyEvent(window: glfw.Window, key: glfw.Key, _: i32, _: glfw.Action, _: glfw.Mods) void {
+fn onKeyEvent(window: glfw.Window, key: glfw.Key, _: i32, action: glfw.Action, _: glfw.Mods) void {
     if (key == .escape) {
         window.setShouldClose(true);
+    } else if (key == .s and action == .press) {
+        saveScreenshot(window) catch |e| {
+            log.gl.err("Unable to save screenshot: {}", .{e});
+        };
     }
+}
+
+fn saveScreenshot(window: glfw.Window) !void {
+    const size = window.getFramebufferSize();
+
+    var image = try zigimg.Image.create(
+        std.heap.c_allocator,
+        size.width,
+        size.height,
+        .rgba32,
+    );
+    defer image.deinit();
+
+    gl.ReadPixels(
+        0,
+        0,
+        @intCast(size.width),
+        @intCast(size.height),
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        image.pixels.asBytes().ptr,
+    );
+
+    var image_converted = try zigimg.Image.create(
+        std.heap.c_allocator,
+        size.width,
+        size.height,
+        .rgb24,
+    );
+    defer image_converted.deinit();
+
+    for (0..size.height) |y| {
+        const y_mirrored = size.height - y - 1;
+        for (0..size.width) |x| {
+            const color = image.pixels.rgba32[(y * size.width) + x];
+            image_converted.pixels.rgb24[(y_mirrored * size.width) + x] = .{
+                .r = color.r,
+                .g = color.g,
+                .b = color.b,
+            };
+        }
+    }
+
+    try image_converted.writeToFilePath(
+        "./screenshot.png",
+        zigimg.Image.EncoderOptions{ .png = .{} },
+    );
 }

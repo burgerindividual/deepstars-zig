@@ -1,13 +1,15 @@
 #version 100
 
-precision mediump float;
+precision highp float;
 
+uniform mat4 mvp_matrix;
 uniform vec2 sample_offset;
 
-attribute vec2 position;
+attribute vec3 position;
 
 void main() {
-    // z doesn't matter here because we have no depth buffer.
-    // w is set to zoom slightly to avoid seams in the AA process.
-    gl_Position = vec4(position + sample_offset, 0.0, 0.995);
+    vec4 initial_position = mvp_matrix * vec4(position, 1.0);
+    vec2 normalized_sample_offset = sample_offset * initial_position.w;
+    vec4 sample_position = vec4(initial_position.xy + normalized_sample_offset, initial_position.zw);
+    gl_Position = sample_position;
 }

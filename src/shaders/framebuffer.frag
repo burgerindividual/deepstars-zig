@@ -13,4 +13,5 @@ void main() {
     // the premultiplication expects a black clear color
     vec3 color_premultiplied = sample.rgb * alpha;
     gl_FragColor = vec4(color_premultiplied, 1.0);
+    // gl_FragColor = vec4(sample.rgb, alpha);
 }

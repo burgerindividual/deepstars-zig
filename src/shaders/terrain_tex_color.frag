@@ -11,4 +11,5 @@ void main() {
     float sample = texture2D(terrain_texture, tex_coords).a;
     
     gl_FragColor = vec4(0.02, 0.02, 0.051, sample);
+    // gl_FragColor = vec4(1.0, 1.0, 1.0, sample);
 }
