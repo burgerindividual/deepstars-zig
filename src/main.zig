@@ -6,7 +6,7 @@ const log = @import("log.zig");
 const zm = @import("zmath");
 const zigimg = @import("zigimg");
 
-const fps_limit = 10.0;
+const fps_limit = 0.0;
 const frametime_limit_ns: u64 = @intFromFloat((1.0 / fps_limit) * std.time.ns_per_s);
 
 const fov_y_degrees = 45.0;
@@ -666,6 +666,7 @@ pub fn main() !void {
             // Read back pixels to determine optimal draw box
             const alloc = std.heap.c_allocator;
             const pixels = try alloc.alloc(RGBAPixel, e.width * e.height);
+            defer alloc.free(pixels);
 
             gl.ReadPixels(
                 0,

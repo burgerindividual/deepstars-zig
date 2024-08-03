@@ -15,7 +15,8 @@ pub fn main() !void {
     file.close();
 }
 
-const alpha_multiplier = 2.0;
+const alpha_ratio = 1.0;
+const alpha_multiplier = @sqrt(alpha_ratio);
 const size_multiplier = 1.0 / @sqrt(alpha_multiplier);
 const magnitude_modifier = 4.0;
 
@@ -86,8 +87,7 @@ fn genStarGeometry() StarsGeometry {
         // To put this into place, we can simply multiply the exponents.
         //
         // From here, we can also multiply our outputs by a balance factor to balance
-        // whether alpha or size should take a larger split. This should also account for
-        // the difference in exponents.
+        // whether alpha or size should take a larger split.
         const alpha = std.math.pow(
             f64,
             100.0,
@@ -103,13 +103,13 @@ fn genStarGeometry() StarsGeometry {
             .r = color[0],
             .g = color[1],
             .b = color[2],
-            .a = @floatCast(@min(alpha, 1.0)),
+            .a = @floatCast(alpha), // @floatCast(@min(alpha, 1.0))
 
             .x = x,
             .y = y,
             .z = z,
 
-            .size = @floatCast(@min(size, 1.0)),
+            .size = @floatCast(size), // @floatCast(@min(size, 1.0))
         };
 
         idx += 1;
