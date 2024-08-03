@@ -15,10 +15,10 @@ pub fn main() !void {
     file.close();
 }
 
-const alpha_ratio = 1.0;
+const alpha_ratio = 5.0;
 const alpha_multiplier = @sqrt(alpha_ratio);
 const size_multiplier = 1.0 / @sqrt(alpha_multiplier);
-const magnitude_modifier = 4.0;
+const magnitude_modifier = 3.5;
 
 // TODO: when comptime is fast enough, just make this comptime and remove preloading
 fn genStarGeometry() StarsGeometry {

@@ -10,7 +10,7 @@ const fps_limit = 0.0;
 const frametime_limit_ns: u64 = @intFromFloat((1.0 / fps_limit) * std.time.ns_per_s);
 
 const fov_y_degrees = 45.0;
-const star_scale_degrees = 0.32;
+const star_scale_degrees = 0.35;
 const star_rot_speed = 1800000;
 
 const terrain_divisions: u16 = 1000;
@@ -30,7 +30,7 @@ var gl_procs: gl.ProcTable = undefined;
 pub fn main() !void {
     glfw.setErrorCallback(log.logGLFWError);
 
-    if (!glfw.init(.{ .platform = .x11 })) {
+    if (!glfw.init(.{ .platform = getPreferredPlatform() })) {
         return error.GLFWInitFailed;
     }
     defer glfw.terminate();
@@ -976,14 +976,15 @@ fn onFramebufferResized(_: glfw.Window, width: u32, height: u32) void {
     };
 }
 
-fn onKeyEvent(window: glfw.Window, key: glfw.Key, _: i32, action: glfw.Action, _: glfw.Mods) void {
+fn onKeyEvent(window: glfw.Window, key: glfw.Key, _: i32, _: glfw.Action, _: glfw.Mods) void {
     if (key == .escape) {
         window.setShouldClose(true);
-    } else if (key == .s and action == .press) {
-        saveScreenshot(window) catch |e| {
-            log.gl.err("Unable to save screenshot: {}", .{e});
-        };
     }
+    // else if (key == .s and action == .press) {
+    //     saveScreenshot(window) catch |e| {
+    //         log.gl.err("Unable to save screenshot: {}", .{e});
+    //     };
+    // }
 }
 
 fn saveScreenshot(window: glfw.Window) !void {
